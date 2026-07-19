@@ -5,22 +5,11 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { createClient } from '@supabase/supabase-js';
-import { GoogleGenAI, Type } from '@google/genai';
+import { execSync } from 'child_process';
 
 dotenv.config();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-// Initialize Gemini API
-const geminiApiKey = process.env.GEMINI_API_KEY || '';
-const ai = new GoogleGenAI({
-  apiKey: geminiApiKey,
-  httpOptions: {
-    headers: {
-      'User-Agent': 'aistudio-build',
-    }
-  }
-});
 
 // Initialize Supabase Client
 const supabaseUrl = process.env.SUPABASE_URL || '';
@@ -195,6 +184,20 @@ function writeOfflineDb(data: any) {
 }
 
 async function startServer() {
+  // Check if we are running in production and the frontend dist is not built
+  if (process.env.NODE_ENV === 'production') {
+    const distHtmlPath = path.join(__dirname, 'dist/index.html');
+    if (!fs.existsSync(distHtmlPath)) {
+      console.log('Production mode detected but dist/index.html was not found. Triggering automatic frontend build (npm run build)...');
+      try {
+        execSync('npm run build', { stdio: 'inherit' });
+        console.log('Frontend build completed successfully!');
+      } catch (buildErr: any) {
+        console.error('Failed to run automatic frontend build on startup:', buildErr.message);
+      }
+    }
+  }
+
   const app = express();
   app.use(express.json({ limit: '100mb' }));
   app.use(express.urlencoded({ limit: '100mb', extended: true }));
@@ -204,7 +207,7 @@ async function startServer() {
     res.json({
       useSupabase: useSupabase,
       supabaseUrl: supabaseUrl,
-      hasGeminiKey: !!geminiApiKey,
+      hasGeminiKey: false,
     });
   });
 
@@ -215,32 +218,68 @@ async function startServer() {
       return res.status(400).json({ error: 'กรุณากรอกรหัสนักเรียนและรหัสผ่าน' });
     }
 
+    const trimmedId = student_id.trim();
+    const trimmedPassword = password.trim();
+
     if (useSupabase) {
       try {
-        const { data, error } = await supabase
+        // Try exact match first using maybeSingle to avoid throwing unhandled exception
+        let { data: student, error: fetchError } = await supabase
           .from('students')
           .select('*')
-          .eq('student_id', student_id.trim())
-          .eq('password', password)
-          .single();
+          .eq('student_id', trimmedId)
+          .eq('password', trimmedPassword)
+          .maybeSingle();
 
-        if (error || !data) {
-          throw new Error('ไม่พบข้อมูลนักเรียน หรือรหัสผ่านไม่ถูกต้อง');
+        // If not found, try case-insensitive match on student_id
+        if (!student && !fetchError) {
+          const { data: ilikeStudent, error: ilikeError } = await supabase
+            .from('students')
+            .select('*')
+            .ilike('student_id', trimmedId)
+            .eq('password', trimmedPassword)
+            .maybeSingle();
+          
+          if (ilikeStudent && !ilikeError) {
+            student = ilikeStudent;
+          }
         }
-        return res.json(data);
+
+        if (student) {
+          return res.json(student);
+        }
       } catch (err: any) {
-        console.log('Supabase student login failed, checking fallback...', err.message);
+        console.log('Supabase student query encountered an error, falling back to local storage...', err.message);
       }
     }
 
     // Fallback Offline DB
     const db = readOfflineDb();
-    const student = db.students.find(
-      (s: any) => s.student_id.toLowerCase() === student_id.trim().toLowerCase() && s.password === password
+    const studentLocal = db.students.find(
+      (s: any) => 
+        String(s.student_id || '').toLowerCase() === trimmedId.toLowerCase() && 
+        String(s.password || '').trim() === trimmedPassword
     );
 
-    if (student) {
-      return res.json(student);
+    if (studentLocal) {
+      // If we are using Supabase and found student locally, upsert them to Supabase in background to sync
+      if (useSupabase) {
+        supabase
+          .from('students')
+          .upsert({
+            id: studentLocal.id,
+            student_id: studentLocal.student_id,
+            name: studentLocal.name,
+            password: studentLocal.password,
+            class_group: studentLocal.class_group
+          })
+          .then(({ error }) => {
+            if (error) console.error('Failed to sync student to Supabase in background:', error.message);
+            else console.log(`Successfully synced student ${studentLocal.student_id} to Supabase in background.`);
+          })
+          .catch(e => console.error('Background sync failed:', e));
+      }
+      return res.json(studentLocal);
     } else {
       return res.status(401).json({ error: 'รหัสประจำตัวนักเรียนหรือรหัสผ่านไม่ถูกต้อง' });
     }
@@ -824,90 +863,6 @@ async function startServer() {
     db.teachers = db.teachers.filter((t: any) => t.id !== id);
     writeOfflineDb(db);
     res.json({ success: true });
-  });
-
-  // AI-POWERED PARSE EXAMS WITH GEMINI (Supports pasting unformatted text or PDF bytes!)
-  app.post('/api/gemini/parse-exam', async (req, res) => {
-    const { text, pdfBase64 } = req.body;
-
-    if (!text && !pdfBase64) {
-      return res.status(400).json({ error: 'ไม่พบข้อมูลข้อสอบ กรุณาคัดลอกข้อความข้อสอบหรืออัปโหลดไฟล์ PDF' });
-    }
-
-    if (!geminiApiKey) {
-      return res.status(500).json({
-        error: 'กรุณาตั้งค่าความลับ (Secret Key) สำหรับ GEMINI_API_KEY เพื่อเปิดใช้งานระบบถอดรหัสข้อสอบอัจฉริยะ'
-      });
-    }
-
-    try {
-      let contents: any[] = [];
-      const prompt = `กรุณาวิเคราะห์ข้อสอบที่ได้รับ และจัดระเบียบโครงสร้างข้อมูลให้อยู่ในรูปแบบของ JSON Array ของคำถาม (Questions) ทั้งหมดให้มีความถูกต้องแม่นยำ ภาษาไทยสมบูรณ์แบบ
-รูปแบบข้อมูล JSON Array ที่ต้องการให้ส่งกลับ:
-[
-  {
-    "question_text": "เนื้อหาของคำถาม...",
-    "options": ["ตัวเลือก 1", "ตัวเลือก 2", "ตัวเลือก 3", "ตัวเลือก 4"],
-    "correct_index": 0, // ค่าดัชนีของตัวเลือกที่ถูกต้องที่สุด (0, 1, 2, หรือ 3)
-    "points": 1, // คะแนนของข้อสอบข้อนี้ ปกติคือ 1
-    "explanation": "คำอธิบายตัวเลือกคำตอบที่ถูกต้องสั้น ๆ เพื่อช่วยสรุปวิเคราะห์"
-  }
-]
-
-วิเคราะห์สกัดข้อสอบจากทรัพยากรด้านล่างนี้ โดยรักษาความหมาย โจทย์ ตัวเลือก และเฉลยให้ดีที่สุด หากไม่มีตัวเลือกให้สุ่มตัวเลือกที่ใกล้เคียง และถ้าหาข้อที่ถูกต้องไม่ได้ ให้ใช้ตัวเลือกข้อแรกเป็นเฉลย และวิเคราะห์คำเฉลยอ้างอิงให้ถูกหลักวิชาการ`;
-
-      if (pdfBase64) {
-        contents = [
-          {
-            inlineData: {
-              data: pdfBase64,
-              mimeType: 'application/pdf'
-            }
-          },
-          prompt
-        ];
-      } else {
-        contents = [
-          prompt + `\n\nนี่คือข้อสอบที่นำเข้า:\n\n${text}`
-        ];
-      }
-
-      console.log('Sending parsing request to Gemini 3.5 Flash...');
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.5-flash',
-        contents: contents,
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                question_text: { type: Type.STRING, description: "เนื้อหาโจทย์ข้อสอบ" },
-                options: {
-                  type: Type.ARRAY,
-                  items: { type: Type.STRING },
-                  description: "รายการตัวเลือกคำตอบ 4 ตัวเลือกหลัก"
-                },
-                correct_index: { type: Type.INTEGER, description: "หมายเลขอาร์เรย์ตัวเลือกที่ตอบถูกที่สุด (0, 1, 2, 3)" },
-                points: { type: Type.INTEGER, description: "คะแนนของข้อสอบข้อนี้" },
-                explanation: { type: Type.STRING, description: "เหตุผลที่ตัวเลือกข้อนี้ถูกต้องอย่างละเอียดสั้นๆ" }
-              },
-              required: ["question_text", "options", "correct_index", "points"]
-            }
-          },
-          systemInstruction: "คุณคือผู้เชี่ยวชาญการศึกษาที่ช่วยสกัดข้อสอบวิเคราะห์แบบทดสอบในโรงเรียนชั้นนำของไทย แปลงข้อสอบรูปประโยคสับสนให้เป็นข้อสอบมาตรฐาน 4 ตัวเลือกและตอบคำตอบที่ถูกต้องที่สุดให้อย่างแม่นยำ"
-        }
-      });
-
-      const parsedJsonText = response.text || '[]';
-      console.log('Successfully received JSON response from Gemini.');
-      const parsedQuestions = JSON.parse(parsedJsonText);
-      res.json({ questions: parsedQuestions });
-    } catch (err: any) {
-      console.error('Gemini exam parsing failure:', err);
-      res.status(500).json({ error: 'เกิดข้อผิดพลาดจากปัญญาประดิษฐ์ในการประมวลผลข้อสอบ: ' + err.message });
-    }
   });
 
   // Client SPA mounting

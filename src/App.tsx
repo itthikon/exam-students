@@ -73,12 +73,62 @@ interface Teacher {
   role: 'admin' | 'teacher';
 }
 
+function detectBrowser() {
+  if (typeof window === 'undefined') {
+    return {
+      isValid: true,
+      isInApp: false,
+      isChrome: true,
+      isSafari: true,
+      isLine: false,
+      isFacebook: false,
+      isInstagram: false,
+      isWeChat: false,
+      isTikTok: false,
+      userAgent: ''
+    };
+  }
+  
+  const ua = navigator.userAgent;
+  const isLine = /Line/i.test(ua);
+  const isFacebook = /FBAN|FBAV/i.test(ua);
+  const isInstagram = /Instagram|FBIOS/i.test(ua);
+  const isWeChat = /MicroMessenger/i.test(ua);
+  const isTikTok = /TikTok|musical_ly/i.test(ua);
+  
+  // Any in-app browser / Webview detection
+  const isAndroidWebview = /Android/i.test(ua) && /Version\/[0-9.]+/i.test(ua) && !/Chrome\/[0-9.]+\s+Mobile/i.test(ua);
+  const isOtherWebview = /WebView|wv|iPh.*AppleWebKit.*Mobile.*Safari/i.test(ua) && !/Safari/i.test(ua) && !/CriOS/i.test(ua);
+  
+  const isInApp = isLine || isFacebook || isInstagram || isWeChat || isTikTok || isAndroidWebview || isOtherWebview;
+
+  // Detect if browser is Google Chrome or Safari
+  const isChrome = (/Chrome|CriOS/i.test(ua) || /Chromium/i.test(ua)) && !/Edg|OPR|Firefox/i.test(ua) && !isInApp;
+  const isSafari = /Safari/i.test(ua) && !/Chrome|CriOS|Chromium|Edg|OPR|Firefox|Android/i.test(ua) && !isInApp;
+  
+  const isValid = (isChrome || isSafari) && !isInApp;
+
+  return {
+    isValid,
+    isInApp,
+    isChrome,
+    isSafari,
+    isLine,
+    isFacebook,
+    isInstagram,
+    isWeChat,
+    isTikTok,
+    userAgent: ua
+  };
+}
+
 export default function App() {
   // Navigation & Session States
   const [userRole, setUserRole] = useState<'guest' | 'student' | 'teacher' | 'admin'>('guest');
+  const [browserInfo, setBrowserInfo] = useState(detectBrowser);
   const [currentUser, setCurrentUser] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<'students' | 'subjects' | 'exams' | 'ai_import' | 'stats'>('stats');
-  const [dbStatus, setDbStatus] = useState({ useSupabase: false, hasGeminiKey: false });
+  const [activeTab, setActiveTab] = useState<'students' | 'subjects' | 'exams' | 'stats'>('stats');
+  const [dbStatus, setDbStatus] = useState({ useSupabase: false });
 
   // DB Data States
   const [students, setStudents] = useState<Student[]>([]);
@@ -109,14 +159,20 @@ export default function App() {
   const [newExamDuration, setNewExamDuration] = useState('30');
   const [newExamRandom, setNewExamRandom] = useState(true);
   const [selectedExamForQuestions, setSelectedExamForQuestions] = useState<string>('');
-  
-  // AI Import States
-  const [pastedExamText, setPastedExamText] = useState('');
-  const [isAiLoading, setIsAiLoading] = useState(false);
-  const [aiLoadingMessage, setAiLoadingMessage] = useState('');
-  const [previewQuestions, setPreviewQuestions] = useState<Question[]>([]);
-  const [importSource, setImportSource] = useState<'text' | 'pdf'>('text');
+  const [activeExamQuestions, setActiveExamQuestions] = useState<Question[]>([]);
+  const [questionsRefreshTrigger, setQuestionsRefreshTrigger] = useState(0);
 
+  useEffect(() => {
+    if (selectedExamForQuestions) {
+      fetch(`/api/exams/${selectedExamForQuestions}/questions`)
+        .then(r => r.json())
+        .then(setActiveExamQuestions)
+        .catch(() => {});
+    } else {
+      setActiveExamQuestions([]);
+    }
+  }, [selectedExamForQuestions, questionsRefreshTrigger]);
+  
   // Active Exam Room States
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [studentAnswers, setStudentAnswers] = useState<Record<string, number>>({});
@@ -412,58 +468,6 @@ export default function App() {
     }
   };
 
-  // SMART AI EXAM IMPORTER WITH GEMINI 3.5 FLASH
-  const handleAiExamParse = async () => {
-    if (importSource === 'text' && !pastedExamText.trim()) {
-      return showToast('กรุณาวางเนื้อหาข้อสอบของคุณก่อน', 'warning');
-    }
-    if (!dbStatus.hasGeminiKey) {
-      return showToast('ไม่พบคีย์ Gemini API โปรดตรวจสอบค่า Secrets', 'error');
-    }
-
-    setIsAiLoading(true);
-    setAiLoadingMessage('ปัญญาประดิษฐ์กำลังวิเคราะห์ภาษา คัดแยกเนื้อหาโจทย์ ตัวเลือก และตรวจหาข้อเฉลย...');
-
-    try {
-      const res = await fetch('/api/gemini/parse-exam', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: pastedExamText })
-      });
-      const data = await res.json();
-      if (res.ok && data.questions) {
-        setPreviewQuestions(data.questions);
-        showToast(`สกัดข้อสอบเสร็จสมบูรณ์! ตรวจพบ ${data.questions.length} ข้อ`);
-      } else {
-        showToast(data.error || 'ประมวลผลข้อสอบผิดพลาด', 'error');
-      }
-    } catch (err) {
-      showToast('เครือข่ายมีปัญหาระหว่างคุยกับ AI', 'error');
-    } finally {
-      setIsAiLoading(false);
-    }
-  };
-
-  const handleSavePreviewQuestions = async () => {
-    if (!selectedExamForQuestions) return showToast('กรุณาเลือกชุดข้อสอบที่จะบันทึกข้อสอบลงไป', 'warning');
-    if (previewQuestions.length === 0) return showToast('ไม่พบคำถามที่ต้องการบันทึก', 'warning');
-
-    const res = await fetch(`/api/exams/${selectedExamForQuestions}/questions/batch`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ questions: previewQuestions })
-    });
-
-    if (res.ok) {
-      showToast(`บันทึกข้อสอบ ${previewQuestions.length} ข้อลงในชุดข้อสอบเรียบร้อยแล้ว!`);
-      setPreviewQuestions([]);
-      setPastedExamText('');
-      refreshData();
-    } else {
-      showToast('บันทึกคำถามล้มเหลว', 'error');
-    }
-  };
-
   // DETAILED QUESTION CRUD
   const [editingQuestion, setEditingQuestion] = useState<Partial<Question> | null>(null);
   const handleSaveQuestionEdit = async () => {
@@ -478,6 +482,7 @@ export default function App() {
     if (res.ok) {
       showToast('บันทึกโจทย์ข้อสอบสำเร็จแล้ว');
       setEditingQuestion(null);
+      setQuestionsRefreshTrigger(prev => prev + 1);
       refreshData();
     }
   };
@@ -487,6 +492,7 @@ export default function App() {
       const res = await fetch(`/api/questions/${qId}`, { method: 'DELETE' });
       if (res.ok) {
         showToast('ลบโจทย์เสร็จสิ้น');
+        setQuestionsRefreshTrigger(prev => prev + 1);
         refreshData();
       }
     }
@@ -796,16 +802,16 @@ CREATE TABLE cheat_logs (
       </AnimatePresence>
 
       {/* Header Bar */}
-      <header className="border-b border-slate-800/80 bg-slate-900/60 backdrop-blur sticky top-0 z-40 px-6 py-4 flex items-center justify-between">
+      <header className="border-b-4 border-slate-900 bg-slate-900/95 sticky top-0 z-40 px-6 py-4 flex items-center justify-between shadow-[0_10px_30px_rgba(0,0,0,0.6)]">
         <div className="flex items-center gap-3">
-          <div className="bg-rose-600 p-2 rounded-xl text-white shadow-lg shadow-rose-600/20">
-            <Shield className="w-6 h-6 animate-pulse" />
+          <div className="bg-rose-600 p-2.5 rounded-xl text-white shadow-[0_4px_0_0_#9f1239,0_8px_16px_rgba(244,63,94,0.3)] transition-transform hover:scale-105">
+            <Shield className="w-6 h-6" />
           </div>
           <div>
             <h1 className="text-lg font-bold tracking-tight bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">
               SECURE EXAM SYSTEM
             </h1>
-            <p className="text-xs text-slate-400 font-mono">ระบบแบบทดสอบออนไลน์นิรภัยอัจฉริยะ</p>
+            <p className="text-xs text-slate-400 font-mono">ระบบแบบทดสอบออนไลน์นิรภัยและป้องกันการทุจริต</p>
           </div>
         </div>
 
@@ -846,11 +852,34 @@ CREATE TABLE cheat_logs (
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6">
         {userRole === 'guest' ? (
           /* ================= GUEST LOGIN SCREEN ================= */
-          <div className="max-w-md mx-auto my-12 bg-slate-900/50 border border-slate-800 rounded-3xl p-6 md:p-8 shadow-2xl relative overflow-hidden">
+          !browserInfo.isValid && loginTab === 'student' ? (
+            <div className="space-y-6 max-w-xl mx-auto my-12">
+              {/* Role Toggle Selector when browser is invalid to let teachers switch tabs */}
+              <div className="p-2 bg-slate-900 border border-slate-800 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 px-4 py-3">
+                <span className="text-xs font-semibold text-slate-400">บทบาทของคุณในการสอบ:</span>
+                <div className="flex gap-2 w-full sm:w-auto">
+                  <button 
+                    onClick={() => setLoginTab('student')}
+                    className={`flex-1 sm:flex-initial px-3 py-1.5 text-[11px] font-semibold rounded-lg transition-all ${loginTab === 'student' ? 'bg-rose-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'}`}
+                  >
+                    นักเรียน (โดนระงับทางเข้า)
+                  </button>
+                  <button 
+                    onClick={() => setLoginTab('teacher')}
+                    className={`flex-1 sm:flex-initial px-3 py-1.5 text-[11px] font-semibold rounded-lg transition-all ${loginTab === 'teacher' ? 'bg-slate-800 text-white shadow' : 'text-slate-400 hover:text-slate-200'}`}
+                  >
+                    คุณครู / แอดมิน (เข้าสู่ระบบ)
+                  </button>
+                </div>
+              </div>
+              <StudentBrowserBlocker browserInfo={browserInfo} onCopyLink={() => showToast('คัดลอกลิงก์สอบแล้ว!', 'success')} />
+            </div>
+          ) : (
+            <div className="max-w-md mx-auto my-12 card-3d rounded-3xl p-6 md:p-8 relative overflow-hidden">
             <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-rose-500 via-pink-500 to-indigo-500"></div>
             
             <div className="text-center mb-8">
-              <div className="inline-flex bg-rose-500/10 p-3 rounded-2xl text-rose-500 mb-3">
+              <div className="inline-flex bg-rose-500/10 p-3 rounded-2xl text-rose-500 mb-3 shadow-[inset_0_2px_4px_rgba(0,0,0,0.5)]">
                 <Shield className="w-8 h-8" />
               </div>
               <h2 className="text-2xl font-bold">เข้าสู่ระบบสอบออนไลน์</h2>
@@ -858,10 +887,10 @@ CREATE TABLE cheat_logs (
             </div>
 
             {/* Selector Tabs */}
-            <div className="grid grid-cols-2 p-1 bg-slate-950 rounded-xl mb-6">
+            <div className="grid grid-cols-2 p-1.5 bg-slate-950 rounded-xl mb-6 shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)]">
               <button 
                 onClick={() => setLoginTab('student')}
-                className={`py-2 text-sm font-medium rounded-lg transition-all ${loginTab === 'student' ? 'bg-slate-800 text-white shadow' : 'text-slate-400 hover:text-slate-200'}`}
+                className={`py-2.5 text-sm font-medium rounded-lg transition-all ${loginTab === 'student' ? 'bg-slate-800 text-white shadow-md border-t border-slate-700' : 'text-slate-400 hover:text-slate-200'}`}
               >
                 <div className="flex items-center justify-center gap-2">
                   <User className="w-4 h-4" />
@@ -870,7 +899,7 @@ CREATE TABLE cheat_logs (
               </button>
               <button 
                 onClick={() => setLoginTab('teacher')}
-                className={`py-2 text-sm font-medium rounded-lg transition-all ${loginTab === 'teacher' ? 'bg-slate-800 text-white shadow' : 'text-slate-400 hover:text-slate-200'}`}
+                className={`py-2.5 text-sm font-medium rounded-lg transition-all ${loginTab === 'teacher' ? 'bg-slate-800 text-white shadow-md border-t border-slate-700' : 'text-slate-400 hover:text-slate-200'}`}
               >
                 <div className="flex items-center justify-center gap-2">
                   <Sliders className="w-4 h-4" />
@@ -888,7 +917,7 @@ CREATE TABLE cheat_logs (
                     placeholder="ตัวอย่าง: STD001"
                     value={studentIdInput}
                     onChange={e => setStudentIdInput(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-slate-100 placeholder-slate-600 focus:outline-none focus:border-rose-500 transition-all"
+                    className="w-full input-3d rounded-xl px-4 py-3 placeholder-slate-600 focus:outline-none focus:border-rose-500 transition-all"
                     required
                   />
                 </div>
@@ -899,13 +928,13 @@ CREATE TABLE cheat_logs (
                     placeholder="••••••••"
                     value={passwordInput}
                     onChange={e => setPasswordInput(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-slate-100 placeholder-slate-600 focus:outline-none focus:border-rose-500 transition-all"
+                    className="w-full input-3d rounded-xl px-4 py-3 placeholder-slate-600 focus:outline-none focus:border-rose-500 transition-all"
                     required
                   />
                 </div>
                 <button 
                   type="submit" 
-                  className="w-full py-3.5 bg-rose-600 hover:bg-rose-500 text-white font-semibold rounded-xl shadow-lg shadow-rose-600/25 cursor-pointer hover:shadow-rose-600/35 transition-all mt-2"
+                  className="w-full py-3.5 btn-3d-primary font-semibold rounded-xl cursor-pointer mt-2"
                 >
                   เข้าสู่ระบบสอบนิรภัย
                 </button>
@@ -923,7 +952,7 @@ CREATE TABLE cheat_logs (
                       placeholder="teacher@school.ac.th"
                       value={teacherEmailInput}
                       onChange={e => setTeacherEmailInput(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-slate-100 placeholder-slate-600 focus:outline-none focus:border-rose-500 transition-all"
+                      className="w-full input-3d rounded-xl px-4 py-3 placeholder-slate-600 focus:outline-none focus:border-rose-500 transition-all"
                       required
                     />
                   </div>
@@ -934,13 +963,13 @@ CREATE TABLE cheat_logs (
                       placeholder="••••••••"
                       value={teacherPasswordInput}
                       onChange={e => setTeacherPasswordInput(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-slate-100 placeholder-slate-600 focus:outline-none focus:border-rose-500 transition-all"
+                      className="w-full input-3d rounded-xl px-4 py-3 placeholder-slate-600 focus:outline-none focus:border-rose-500 transition-all"
                       required
                     />
                   </div>
                   <button 
                     type="submit" 
-                    className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-100 font-semibold rounded-xl cursor-pointer transition-all border border-slate-700/80"
+                    className="w-full py-3 btn-3d-secondary font-semibold rounded-xl cursor-pointer mt-2"
                   >
                     เข้าสู่ระบบแบบบัญชีทั่วไป
                   </button>
@@ -953,7 +982,7 @@ CREATE TABLE cheat_logs (
 
                 <button 
                   onClick={handleGoogleLogin}
-                  className="w-full py-3 bg-white hover:bg-slate-100 text-slate-950 font-semibold rounded-xl flex items-center justify-center gap-3 cursor-pointer shadow transition-all duration-200"
+                  className="w-full py-3 bg-white hover:bg-slate-100 text-slate-950 font-semibold rounded-xl flex items-center justify-center gap-3 cursor-pointer shadow-[0_4px_0_0_#cbd5e1] hover:shadow-[0_2px_0_0_#cbd5e1] hover:translate-y-[2px] active:translate-y-[4px] active:shadow-none transition-all duration-150"
                 >
                   <svg className="w-5 h-5" viewBox="0 0 24 24">
                     <path fill="#EA4335" d="M12 5.04c1.66 0 3.2.57 4.38 1.69l3.27-3.27C17.67 1.6 15 1 12 1 7.35 1 3.37 3.63 1.39 7.46l3.87 3C6.18 7.37 8.87 5.04 12 5.04z" />
@@ -966,15 +995,19 @@ CREATE TABLE cheat_logs (
               </div>
             )}
           </div>
+          )
         ) : userRole === 'student' ? (
           /* ================= STUDENT WORKSPACE ================= */
-          <div className="space-y-6">
+          !browserInfo.isValid ? (
+            <StudentBrowserBlocker browserInfo={browserInfo} onCopyLink={() => showToast('คัดลอกลิงก์สอบแล้ว!', 'success')} />
+          ) : (
+            <div className="space-y-6">
             {examState === 'gateway' && (
               <>
                 {/* Student Hero Header */}
-                <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+                <div className="card-3d rounded-3xl p-6 relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
                   <div className="space-y-1 z-10">
-                    <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-rose-500/15 text-rose-400 rounded-full text-xs font-semibold mb-2">
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-rose-500/15 text-rose-400 rounded-full text-xs font-semibold mb-2 shadow-[inset_0_1px_2px_rgba(0,0,0,0.4)]">
                       <Shield className="w-3.5 h-3.5" />
                       <span>โหมดผู้เรียนปลอดภัย (Secure Proctoring Active)</span>
                     </div>
@@ -982,13 +1015,13 @@ CREATE TABLE cheat_logs (
                     <p className="text-slate-400 text-sm">เลขประจำตัวนักเรียน: <span className="font-mono text-slate-200">{currentUser?.student_id}</span> • ระดับชั้น: {currentUser?.class_group}</p>
                   </div>
                   <div className="flex gap-4">
-                    <div className="bg-slate-950/60 border border-slate-800 rounded-2xl p-3 text-center min-w-24">
+                    <div className="bg-slate-950/70 border border-slate-800 rounded-2xl p-3 text-center min-w-24 shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)]">
                       <p className="text-xs text-slate-400">สอบเสร็จแล้ว</p>
                       <p className="text-2xl font-black text-emerald-400 mt-1">
                         {examResults.filter(r => r.student_id === currentUser.student_id).length}
                       </p>
                     </div>
-                    <div className="bg-slate-950/60 border border-slate-800 rounded-2xl p-3 text-center min-w-24">
+                    <div className="bg-slate-950/70 border border-slate-800 rounded-2xl p-3 text-center min-w-24 shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)]">
                       <p className="text-xs text-slate-400">กรณีสับสน/แจ้งเตือน</p>
                       <p className="text-2xl font-black text-rose-400 mt-1">
                         {cheatLogs.filter(cl => cl.student_id === currentUser.student_id).length}
@@ -1010,7 +1043,7 @@ CREATE TABLE cheat_logs (
                       <select 
                         value={selectedSubjectId}
                         onChange={e => setSelectedSubjectId(e.target.value)}
-                        className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:outline-none"
+                        className="input-3d rounded-xl px-3 py-1.5 text-xs focus:outline-none"
                       >
                         <option value="">ทั้งหมดทุกวิชา</option>
                         {subjects.map(s => (
@@ -1031,7 +1064,7 @@ CREATE TABLE cheat_logs (
                         return (
                           <div 
                             key={exam.id} 
-                            className="bg-slate-900/40 border border-slate-800 hover:border-slate-700 rounded-2xl p-5 flex flex-col justify-between gap-4 shadow-sm relative overflow-hidden transition-all group"
+                            className="card-3d rounded-2xl p-5 flex flex-col justify-between gap-4 relative overflow-hidden transition-all group hover:translate-y-[-2px]"
                           >
                             <div className="space-y-2">
                               {/* Exam Type Header Tag */}
@@ -1079,14 +1112,14 @@ CREATE TABLE cheat_logs (
                                         setExamState('finished');
                                       });
                                   }}
-                                  className="px-3 py-1.5 bg-slate-800 text-xs rounded-xl hover:bg-slate-700 hover:text-slate-200 transition-all cursor-pointer"
+                                  className="px-3 py-1.5 btn-3d-secondary text-xs rounded-xl cursor-pointer"
                                 >
                                   ดูผลวิเคราะห์ข้อสอบ
                                 </button>
                               ) : (
                                 <button 
                                   onClick={() => handleStartExam(exam)}
-                                  className="px-4 py-2 bg-rose-600 text-xs rounded-xl font-semibold shadow hover:bg-rose-500 cursor-pointer transition-all"
+                                  className="px-4 py-2 btn-3d-primary text-xs rounded-xl font-semibold cursor-pointer"
                                 >
                                   {result && exam.type === 'practice' ? 'ทำใหม่อีกครั้ง' : 'เริ่มทำข้อสอบ'}
                                 </button>
@@ -1096,7 +1129,7 @@ CREATE TABLE cheat_logs (
                         );
                       })}
                     {exams.filter(e => e.is_active && (!selectedSubjectId || e.subject_id === selectedSubjectId)).length === 0 && (
-                      <div className="col-span-full bg-slate-900/20 border border-dashed border-slate-800 rounded-2xl py-12 text-center text-slate-500">
+                      <div className="col-span-full border-2 border-dashed border-slate-800 rounded-2xl py-12 text-center text-slate-500 shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)]">
                         ไม่มีชุดแบบทดสอบที่เปิดใช้งานในหมวดหมู่นี้ในขณะนี้
                       </div>
                     )}
@@ -1425,42 +1458,35 @@ CREATE TABLE cheat_logs (
               </div>
             )}
           </div>
+          )
         ) : (
           /* ================= TEACHER / ADMIN DASHBOARD WORKSPACE ================= */
           <div className="flex flex-col lg:flex-row gap-6">
             {/* Sidebar Controls */}
-            <aside className="w-full lg:w-64 bg-slate-900 border border-slate-800 rounded-3xl p-4 space-y-1 lg:self-start">
+            <aside className="w-full lg:w-64 card-3d rounded-3xl p-4 space-y-2 lg:self-start">
               <p className="text-[10px] font-bold text-slate-400 px-3 uppercase tracking-wider mb-2">เมนูการควบคุมครูผู้สอน</p>
               
               <button 
                 onClick={() => setActiveTab('stats')}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 text-xs font-semibold rounded-xl transition-all cursor-pointer ${activeTab === 'stats' ? 'bg-rose-600 text-white' : 'text-slate-300 hover:bg-slate-800'}`}
+                className={`w-full flex items-center gap-3 px-3 py-3 text-xs font-semibold rounded-xl transition-all cursor-pointer ${activeTab === 'stats' ? 'tab-3d-active text-white' : 'tab-3d-inactive text-slate-300 hover:bg-slate-800'}`}
               >
-                <BarChart3 className="w-4 h-4" />
+                <BarChart3 className="w-4 h-4 text-rose-500" />
                 <span>ภาพรวมและติดตามสอบเรียลไทม์</span>
               </button>
 
               <button 
                 onClick={() => setActiveTab('subjects')}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 text-xs font-semibold rounded-xl transition-all cursor-pointer ${activeTab === 'subjects' ? 'bg-rose-600 text-white' : 'text-slate-300 hover:bg-slate-800'}`}
+                className={`w-full flex items-center gap-3 px-3 py-3 text-xs font-semibold rounded-xl transition-all cursor-pointer ${activeTab === 'subjects' ? 'tab-3d-active text-white' : 'tab-3d-inactive text-slate-300 hover:bg-slate-800'}`}
               >
-                <BookOpen className="w-4 h-4" />
+                <BookOpen className="w-4 h-4 text-rose-500" />
                 <span>จัดการวิชาและชุดข้อสอบ</span>
               </button>
 
               <button 
-                onClick={() => setActiveTab('ai_import')}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 text-xs font-semibold rounded-xl transition-all cursor-pointer ${activeTab === 'ai_import' ? 'bg-rose-600 text-white' : 'text-slate-300 hover:bg-slate-800'}`}
-              >
-                <Sparkles className="w-4 h-4 animate-bounce" />
-                <span>สร้างข้อสอบอัจฉริยะด้วย AI</span>
-              </button>
-
-              <button 
                 onClick={() => setActiveTab('students')}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 text-xs font-semibold rounded-xl transition-all cursor-pointer ${activeTab === 'students' ? 'bg-rose-600 text-white' : 'text-slate-300 hover:bg-slate-800'}`}
+                className={`w-full flex items-center gap-3 px-3 py-3 text-xs font-semibold rounded-xl transition-all cursor-pointer ${activeTab === 'students' ? 'tab-3d-active text-white' : 'tab-3d-inactive text-slate-300 hover:bg-slate-800'}`}
               >
-                <Users className="w-4 h-4" />
+                <Users className="w-4 h-4 text-rose-500" />
                 <span>จัดการรายชื่อนักเรียน</span>
               </button>
             </aside>
@@ -1473,26 +1499,26 @@ CREATE TABLE cheat_logs (
                 <div className="space-y-6">
                   {/* Grid metrics counters */}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl">
+                    <div className="card-3d rounded-2xl p-4">
                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">นักเรียนในระบบทั้งหมด</p>
                       <p className="text-2xl font-black text-rose-500 mt-1">{students.length} คน</p>
                     </div>
-                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl">
+                    <div className="card-3d rounded-2xl p-4">
                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">จำนวนรายวิชาหลัก</p>
                       <p className="text-2xl font-black text-slate-100 mt-1">{subjects.length} วิชา</p>
                     </div>
-                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl">
+                    <div className="card-3d rounded-2xl p-4">
                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">ชุดข้อสอบทั้งหมด</p>
                       <p className="text-2xl font-black text-slate-100 mt-1">{exams.length} ชุด</p>
                     </div>
-                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl">
+                    <div className="card-3d rounded-2xl p-4">
                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">อัตราทุจริต/ละเมิดกติกา</p>
                       <p className="text-2xl font-black text-rose-500 mt-1 animate-pulse">{cheatLogs.length} ครั้ง</p>
                     </div>
                   </div>
 
                   {/* Real-time Incident Logs Monitoring Feed */}
-                  <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 md:p-6 space-y-4">
+                  <div className="card-3d rounded-3xl p-5 md:p-6 space-y-4">
                     <div className="flex items-center justify-between">
                       <h3 className="font-bold text-base flex items-center gap-2 text-rose-400">
                         <AlertTriangle className="w-5 h-5 text-rose-500 animate-bounce" />
@@ -1534,74 +1560,6 @@ CREATE TABLE cheat_logs (
                               <td className="p-3 text-slate-400">{cl.details}</td>
                             </tr>
                           ))}
-                          {cheatLogs.length === 0 && (
-                            <tr>
-                              <td colSpan={5} className="text-center p-6 text-slate-500">
-                                ยังไม่มีการประวัติความพยายามละเมิดโหมดความปลอดภัยในการสอบในขณะนี้
-                              </td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-
-                  {/* Complete Exam Submissions & Analysis */}
-                  <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 md:p-6 space-y-4">
-                    <h3 className="font-bold text-base flex items-center gap-2 text-slate-200">
-                      <BarChart3 className="w-5 h-5 text-indigo-400" />
-                      <span>ตารางคะแนนผลสอบเรียลไทม์ (Student Scores Analytics)</span>
-                    </h3>
-
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs text-slate-300">
-                        <thead className="bg-slate-950 text-slate-400 font-bold">
-                          <tr>
-                            <th className="p-3">รหัสนักเรียน</th>
-                            <th className="p-3">ชื่อ-นามสกุล</th>
-                            <th className="p-3">รหัสชุดข้อสอบ</th>
-                            <th className="p-3">คะแนนที่ได้</th>
-                            <th className="p-3">คิดเป็น %</th>
-                            <th className="p-3">เวลาส่งกระดาษ</th>
-                            <th className="p-3">ประเมิน</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-800/60">
-                          {examResults.map(res => {
-                            const pct = Math.round((res.score / res.total_score) * 100);
-                            return (
-                              <tr key={res.id} className="hover:bg-slate-800/30">
-                                <td className="p-3 font-mono font-bold">{res.student_id}</td>
-                                <td className="p-3 font-semibold">{res.student_name}</td>
-                                <td className="p-3 font-mono text-slate-400">{exams.find(e => e.id === res.exam_id)?.title || res.exam_id}</td>
-                                <td className="p-3 font-black text-rose-500">{res.score} / {res.total_score}</td>
-                                <td className="p-3">
-                                  <div className="flex items-center gap-2">
-                                    <div className="w-16 bg-slate-950 h-2 rounded-full overflow-hidden">
-                                      <div className="bg-emerald-400 h-full" style={{ width: `${pct}%` }}></div>
-                                    </div>
-                                    <span className="font-bold text-slate-200">{pct}%</span>
-                                  </div>
-                                </td>
-                                <td className="p-3 text-slate-400">{new Date(res.submit_time).toLocaleTimeString()}</td>
-                                <td className="p-3">
-                                  <span className={`px-2 py-0.5 rounded-lg text-[10px] font-bold ${
-                                    pct >= 80 ? 'bg-emerald-500/10 text-emerald-300' :
-                                    pct >= 50 ? 'bg-amber-500/10 text-amber-300' : 'bg-rose-500/10 text-rose-300'
-                                  }`}>
-                                    {pct >= 80 ? 'ดีเยี่ยม' : pct >= 50 ? 'ผ่าน' : 'ไม่ผ่าน'}
-                                  </span>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                          {examResults.length === 0 && (
-                            <tr>
-                              <td colSpan={7} className="text-center p-6 text-slate-500">
-                                ยังไม่มีข้อมูลส่งผลสอบในระบบ
-                              </td>
-                            </tr>
-                          )}
                         </tbody>
                       </table>
                     </div>
@@ -1612,77 +1570,24 @@ CREATE TABLE cheat_logs (
               {/* === SUBPAGE: SUBJECTS & EXAMS MANAGEMENT === */}
               {activeTab === 'subjects' && (
                 <div className="space-y-6">
-                  {/* Create New Subject */}
-                  <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 md:p-6 space-y-4">
-                    <h3 className="font-bold text-base">เพิ่มรายวิชาเรียนใหม่</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div>
-                        <label className="block text-xs text-slate-400 mb-1">รหัสวิชา</label>
-                        <input 
-                          type="text" 
-                          placeholder="เช่น ค33201"
-                          value={newSubjectCode}
-                          onChange={e => setNewSubjectCode(e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-100"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-slate-400 mb-1">ชื่อวิชา</label>
-                        <input 
-                          type="text" 
-                          placeholder="เช่น คณิตศาสตร์เพิ่มเติม ม.6"
-                          value={newSubjectName}
-                          onChange={e => setNewSubjectName(e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-100"
-                        />
-                      </div>
-                      <div className="flex items-end">
-                        <button 
-                          onClick={handleAddSubject}
-                          className="w-full py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs cursor-pointer shadow transition-all flex items-center justify-center gap-2"
-                        >
-                          <Plus className="w-4 h-4" />
-                          <span>บันทึกรายวิชา</span>
-                        </button>
-                      </div>
-                    </div>
 
-                    {/* Subjects table list */}
-                    <div className="pt-4 border-t border-slate-800">
-                      <p className="text-xs font-bold text-slate-400 mb-2 uppercase tracking-wider">รายวิชาทั้งหมด</p>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {subjects.map(s => (
-                          <div key={s.id} className="bg-slate-950 p-3.5 border border-slate-800/80 rounded-2xl flex items-center justify-between">
-                            <div>
-                              <p className="text-xs text-rose-400 font-bold font-mono">{s.code}</p>
-                              <p className="text-sm font-semibold text-slate-200 mt-0.5">{s.name}</p>
-                            </div>
-                            <button 
-                              onClick={() => handleDeleteSubject(s.id)}
-                              className="p-1.5 bg-rose-950/40 text-rose-400 border border-rose-500/10 hover:bg-rose-600 hover:text-white rounded-lg transition-all"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Create New Exam Paper */}
-                  <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 md:p-6 space-y-4">
-                    <h3 className="font-bold text-base">สร้างชุดแบบทดสอบใหม่</h3>
+                   {/* Create New Exam */}
+                  <div className="card-3d rounded-3xl p-5 md:p-6 space-y-4">
+                    <h3 className="font-bold text-base flex items-center gap-2">
+                      <BookOpen className="w-5 h-5 text-rose-500" />
+                      <span>สร้างชุดข้อสอบใหม่</span>
+                    </h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                       <div>
-                        <label className="block text-xs text-slate-400 mb-1">เลือกวิชาหลัก</label>
+                        <label className="block text-xs text-slate-400 mb-1">เลือกรายวิชาเรียน</label>
                         <select 
                           value={selectedSubjectId}
                           onChange={e => setSelectedSubjectId(e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-100"
+                          className="w-full input-3d rounded-xl px-4 py-2.5 text-xs"
                         >
-                          <option value="">-- กรุณาเลือก --</option>
+                          <option value="">-- เลือกรายวิชา --</option>
                           {subjects.map(s => (
-                            <option key={s.id} value={s.id}>{s.code} - {s.name}</option>
+                            <option key={s.id} value={s.id}>[{s.code}] {s.name}</option>
                           ))}
                         </select>
                       </div>
@@ -1690,10 +1595,10 @@ CREATE TABLE cheat_logs (
                         <label className="block text-xs text-slate-400 mb-1">ชื่อชุดข้อสอบ</label>
                         <input 
                           type="text" 
-                          placeholder="เช่น สอบเก็บคะแนน เรื่องตรีโกณมิติ"
+                          placeholder="เช่น สอบกลางภาคเรียนที่ 1"
                           value={newExamTitle}
                           onChange={e => setNewExamTitle(e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-100"
+                          className="w-full input-3d rounded-xl px-4 py-2.5 text-xs"
                         />
                       </div>
                       <div>
@@ -1701,22 +1606,22 @@ CREATE TABLE cheat_logs (
                         <select 
                           value={newExamType}
                           onChange={e => setNewExamType(e.target.value as any)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-100"
+                          className="w-full input-3d rounded-xl px-4 py-2.5 text-xs"
                         >
-                          <option value="quiz">สอบเก็บคะแนน (Quiz)</option>
+                          <option value="quiz">แบบทดสอบสั้น (Quiz)</option>
                           <option value="midterm">สอบกลางภาค (Midterm)</option>
                           <option value="final">สอบปลายภาค (Final)</option>
-                          <option value="practice">ฝึกฝนทักษะสอบวนซ้ำได้ (Practice)</option>
+                          <option value="practice">ฝึกฝนทบทวน (Practice)</option>
                         </select>
                       </div>
                       <div>
-                        <label className="block text-xs text-slate-400 mb-1">ระยะเวลา (นาที)</label>
+                        <label className="block text-xs text-slate-400 mb-1">เวลาที่ใช้สอบ (นาที)</label>
                         <input 
                           type="number" 
-                          placeholder="30"
+                          placeholder="เช่น 60"
                           value={newExamDuration}
                           onChange={e => setNewExamDuration(e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-100"
+                          className="w-full input-3d rounded-xl px-4 py-2.5 text-xs"
                         />
                       </div>
                     </div>
@@ -1724,246 +1629,250 @@ CREATE TABLE cheat_logs (
                     <div className="flex items-center gap-2">
                       <input 
                         type="checkbox" 
-                        id="randCheck"
+                        id="randomQuestions"
                         checked={newExamRandom}
                         onChange={e => setNewExamRandom(e.target.checked)}
-                        className="rounded border-slate-800" 
+                        className="rounded bg-slate-950 border-slate-800 text-rose-600 focus:ring-rose-500"
                       />
-                      <label htmlFor="randCheck" className="text-xs text-slate-400 cursor-pointer select-none">
-                        สุ่มสลับสับโจทย์คำถามและตัวเลือกกระดาษสอบของผู้เรียน (Anti-Cheat Randomize)
+                      <label htmlFor="randomQuestions" className="text-xs text-slate-300">
+                        สุ่มสลับตำแหน่งข้อและตัวเลือกคำตอบเพื่อลดการลอกข้อสอบ
                       </label>
                     </div>
 
                     <button 
                       onClick={handleAddExam}
-                      className="px-6 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs cursor-pointer shadow flex items-center gap-2"
+                      className="py-2.5 px-6 btn-3d-primary font-bold rounded-xl text-xs cursor-pointer"
                     >
-                      <Plus className="w-4 h-4" />
-                      <span>ยืนยันสร้างชุดข้อสอบ</span>
+                      สร้างชุดข้อสอบ
                     </button>
+                  </div>
 
-                    {/* Active exams table list */}
-                    <div className="pt-4 border-t border-slate-800 space-y-2">
-                      <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">ชุดข้อสอบในระบบ</p>
-                      
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-xs text-left">
-                          <thead className="bg-slate-950 text-slate-400 font-bold">
-                            <tr>
-                              <th className="p-3">วิชาเรียน</th>
-                              <th className="p-3">ชื่อแบบทดสอบ</th>
-                              <th className="p-3">ประเภท</th>
-                              <th className="p-3">เวลา (นาที)</th>
-                              <th className="p-3">สุ่มสลับโจทย์</th>
-                              <th className="p-3">สถานะปิด/เปิดสอบ</th>
-                              <th className="p-3 text-right">ดำเนินการ</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {exams.map(ex => {
-                              const subject = subjects.find(s => s.id === ex.subject_id);
-                              return (
-                                <tr key={ex.id} className="border-b border-slate-800/50 hover:bg-slate-950/30">
-                                  <td className="p-3">{subject ? `${subject.code} - ${subject.name}` : ex.subject_id}</td>
-                                  <td className="p-3 font-semibold text-slate-200">{ex.title}</td>
-                                  <td className="p-3 font-bold uppercase text-slate-400">{ex.type}</td>
-                                  <td className="p-3">{ex.duration} นาที</td>
-                                  <td className="p-3">{ex.randomize ? 'เปิดสุ่มโจทย์' : 'โจทย์ตามลำดับ'}</td>
-                                  <td className="p-3">
-                                    <button 
-                                      onClick={() => handleToggleExamStatus(ex)}
-                                      className={`px-3 py-1 text-[10px] font-bold rounded-lg cursor-pointer ${
-                                        ex.is_active ? 'bg-emerald-500/15 text-emerald-400' : 'bg-slate-800 text-slate-400'
-                                      }`}
-                                    >
-                                      {ex.is_active ? 'เปิดสอบ (Active)' : 'ปิดการสอบ (Draft)'}
-                                    </button>
-                                  </td>
-                                  <td className="p-3 text-right">
-                                    <button 
-                                      onClick={() => handleDeleteExam(ex.id)}
-                                      className="p-1.5 text-rose-400 hover:text-white hover:bg-rose-600 rounded-lg"
-                                    >
-                                      <Trash2 className="w-4 h-4" />
-                                    </button>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
+                  {/* Exams List & Question Builder */}
+                  <div className="card-3d rounded-3xl p-5 md:p-6 space-y-6">
+                    <h3 className="font-bold text-base">รายการชุดข้อสอบทั้งหมด</h3>
+                    
+                    <div className="grid grid-cols-1 gap-4">
+                      {exams.map(exam => {
+                        const sub = subjects.find(s => s.id === exam.subject_id);
+                        return (
+                          <div key={exam.id} className="bg-slate-950 p-4 border border-slate-800 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="px-2 py-0.5 bg-rose-600/10 text-rose-400 border border-rose-500/20 rounded-full text-[10px] font-bold uppercase tracking-wider">
+                                  {exam.type}
+                                </span>
+                                {sub && (
+                                  <span className="text-xs text-slate-400 font-mono">[{sub.code}] {sub.name}</span>
+                                )}
+                              </div>
+                              <h4 className="font-bold text-sm text-slate-200 mt-1">{exam.title}</h4>
+                              <p className="text-xs text-slate-400 mt-0.5">เวลาจำกัด {exam.duration} นาที • ระบบสุ่มคำถาม: {exam.randomize ? 'เปิดใช้งาน' : 'ปิดการใช้งาน'}</p>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2.5">
+                              <button 
+                                onClick={() => {
+                                  setSelectedExamForQuestions(exam.id);
+                                  setEditingQuestion({
+                                    exam_id: exam.id,
+                                    question_text: '',
+                                    options: ['', '', '', ''],
+                                    correct_index: 0,
+                                    points: 1,
+                                    explanation: ''
+                                  });
+                                }}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                  selectedExamForQuestions === exam.id ? 'bg-indigo-600 text-white' : 'bg-slate-800 hover:bg-slate-700 text-slate-200'
+                                }`}
+                              >
+                                จัดการคำถาม ({activeExamQuestions && selectedExamForQuestions === exam.id ? activeExamQuestions.length : '...'} ข้อ)
+                              </button>
+
+                              <button 
+                                onClick={() => handleToggleExamStatus(exam)}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                  exam.is_active ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/20' : 'bg-slate-800 text-slate-400'
+                                }`}
+                              >
+                                {exam.is_active ? 'สถานะ: เปิดสอบอยู่' : 'สถานะ: ปิดการเข้าสอบ'}
+                              </button>
+
+                              <button 
+                                onClick={() => handleDeleteExam(exam.id)}
+                                className="px-3 py-1.5 bg-rose-600/10 hover:bg-rose-600/20 text-rose-400 border border-rose-500/10 rounded-lg text-xs font-bold transition-all"
+                              >
+                                ลบชุดข้อสอบ
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {exams.length === 0 && (
+                        <p className="text-xs text-center text-slate-500 py-4">ยังไม่เคยมีการสร้างชุดข้อสอบในระบบ</p>
+                      )}
                     </div>
                   </div>
-                </div>
-              )}
 
-              {/* === SUBPAGE: AI SMART EXAM CREATOR (GEMINI 3.5 FLASH) === */}
-              {activeTab === 'ai_import' && (
-                <div className="space-y-6">
-                  <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 md:p-6 space-y-4">
-                    <div className="flex items-center gap-3">
-                      <div className="bg-rose-500/10 p-2.5 rounded-xl text-rose-400 border border-rose-500/20">
-                        <Sparkles className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <h3 className="font-bold text-base">สกัดโจทย์ข้อสอบด้วย AI อัจฉริยะ</h3>
-                        <p className="text-xs text-slate-400">คัดลอกข้อความกระดาษข้อสอบ หรือใช้ PDF ส่งไปให้ปัญญาประดิษฐ์สกัดเป็นข้อสอบและตัวเลือก 4 ตัวพร้อมเฉลยในทันที</p>
-                      </div>
-                    </div>
-
-                    {!dbStatus.hasGeminiKey && (
-                      <div className="bg-rose-950/20 border border-rose-500/20 p-4 rounded-2xl flex items-start gap-3">
-                        <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+                  {/* Selected Exam's Questions CRUD Section */}
+                  {selectedExamForQuestions && (
+                    <div className="card-3d rounded-3xl p-5 md:p-6 space-y-6">
+                      <div className="flex items-center justify-between">
                         <div>
-                          <p className="text-sm font-bold text-rose-300">ไม่พบคีย์ความลับของระบบ AI (GEMINI_API_KEY)</p>
-                          <p className="text-xs text-slate-400 mt-1">
-                            โปรดเพิ่มตัวแปรระบบความลับในแดชบอร์ด Secrets panel ด้วยคำว่า <span className="font-mono text-white bg-rose-500/20 px-1 py-0.5 rounded">GEMINI_API_KEY</span> เพื่อปลดล็อคการนำเข้าคำถามอัจฉริยะ
-                          </p>
+                          <h3 className="font-bold text-base text-indigo-400">คลังข้อสอบภายใน: {exams.find(e => e.id === selectedExamForQuestions)?.title}</h3>
+                          <p className="text-xs text-slate-400">รวมทั้งหมด {activeExamQuestions.length} คำถามในชุดข้อสอบนี้</p>
                         </div>
+                        <button 
+                          onClick={() => setEditingQuestion({
+                            exam_id: selectedExamForQuestions,
+                            question_text: '',
+                            options: ['', '', '', ''],
+                            correct_index: 0,
+                            points: 1,
+                            explanation: ''
+                          })}
+                          className="px-3 py-1.5 btn-3d-secondary rounded-xl text-xs font-bold flex items-center gap-1.5"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>สร้างข้อสอบใหม่</span>
+                        </button>
                       </div>
-                    )}
 
-                    <div className="space-y-3">
-                      <label className="block text-xs text-slate-400">คัดลอกโจทย์ข้อสอบทั้งหมดและวางลงในส่วนนี้</label>
-                      <textarea
-                        rows={8}
-                        placeholder="วางข้อสอบของท่านที่นี่ ตัวอย่าง:&#10;ข้อ 1. เซลล์ใดของร่างกายที่ทำหน้าที่ส่งกระแสประสาท?&#10;ก. เซลล์กล้ามเนื้อ&#10;ข. เซลล์ประสาท&#10;ค. เซลล์ผิวหนัง&#10;ง. เซลล์เม็ดเลือด&#10;เฉลย ข."
-                        value={pastedExamText}
-                        onChange={e => setPastedExamText(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-xs text-slate-200 placeholder-slate-700 focus:outline-none focus:border-rose-500 transition-all font-mono"
-                      />
-                    </div>
+                      {/* Manual Question Editor Form */}
+                      {editingQuestion && (
+                        <div className="bg-slate-950 p-5 border border-slate-800 rounded-2xl space-y-4 shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)]">
+                          <h4 className="font-bold text-sm text-slate-200">
+                            {editingQuestion.id ? 'แก้ไขข้อสอบคลังหลัก' : 'เพิ่มข้อสอบข้อใหม่เข้าระบบ'}
+                          </h4>
 
-                    <div className="flex items-center gap-4">
-                      <button 
-                        onClick={handleAiExamParse}
-                        disabled={isAiLoading}
-                        className="px-6 py-3 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs cursor-pointer shadow flex items-center gap-2 disabled:opacity-50"
-                      >
-                        {isAiLoading ? (
-                          <>
-                            <RefreshCw className="w-4 h-4 animate-spin" />
-                            <span>กำลังถอดวิเคราะห์รหัสข้อสอบ...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Sparkles className="w-4 h-4" />
-                            <span>สกัดข้อสอบด้วย AI (Gemini 3.5)</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
-
-                    {isAiLoading && (
-                      <div className="p-4 bg-slate-950 border border-slate-800 rounded-2xl flex items-center gap-3">
-                        <div className="w-10 h-10 border-4 border-rose-600 border-t-transparent rounded-full animate-spin shrink-0"></div>
-                        <p className="text-xs text-slate-300 font-medium animate-pulse">{aiLoadingMessage}</p>
-                      </div>
-                    )}
-
-                    {previewQuestions.length > 0 && (
-                      <div className="pt-6 border-t border-slate-800 space-y-4">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-950 p-4 border border-slate-800 rounded-2xl">
-                          <div className="space-y-0.5">
-                            <p className="text-sm font-bold text-emerald-400">สกัดตรวจพบสำเร็จแล้ว {previewQuestions.length} ข้อสอบ!</p>
-                            <p className="text-xs text-slate-400">ขั้นตอนสุดท้าย: โปรดเลือกชุดข้อสอบที่จะบันทึกข้อสอบกลุ่มนี้ลงฐานข้อมูลจริง</p>
+                          <div className="space-y-2">
+                            <label className="block text-xs text-slate-400">เนื้อหาโจทย์ข้อสอบ (ภาษาไทย/อังกฤษ)</label>
+                            <input 
+                              type="text" 
+                              placeholder="เช่น ข้อใดคือหน่วยย่อยที่เล็กที่สุดของสิ่งมีชีวิต?"
+                              value={editingQuestion.question_text || ''}
+                              onChange={e => setEditingQuestion({...editingQuestion, question_text: e.target.value})}
+                              className="w-full input-3d rounded-xl px-4 py-2.5 text-xs text-slate-100"
+                            />
                           </div>
-                          
-                          <div className="flex items-center gap-3">
-                            <select 
-                              value={selectedExamForQuestions}
-                              onChange={e => setSelectedExamForQuestions(e.target.value)}
-                              className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none"
-                            >
-                              <option value="">-- เลือกชุดข้อสอบเป้าหมาย --</option>
-                              {exams.map(ex => (
-                                <option key={ex.id} value={ex.id}>{ex.title}</option>
-                              ))}
-                            </select>
-                            
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            {editingQuestion.options?.map((opt, oIdx) => (
+                              <div key={oIdx} className="space-y-1">
+                                <label className="block text-[10px] text-slate-500 font-bold uppercase">ตัวเลือก {String.fromCharCode(3555 + oIdx)} (ตัวเลือกที่ {oIdx + 1})</label>
+                                <input 
+                                  type="text" 
+                                  placeholder={`พิมพ์ตัวเลือกที่ ${oIdx + 1}`}
+                                  value={opt}
+                                  onChange={e => {
+                                    const opts = [...(editingQuestion.options || ['', '', '', ''])];
+                                    opts[oIdx] = e.target.value;
+                                    setEditingQuestion({...editingQuestion, options: opts});
+                                  }}
+                                  className="w-full input-3d rounded-xl px-4 py-2 text-xs text-slate-100"
+                                />
+                              </div>
+                            ))}
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
+                            <div>
+                              <label className="block text-xs text-slate-400 mb-1">ตัวเฉลยที่ถูกต้อง</label>
+                              <select 
+                                value={editingQuestion.correct_index}
+                                onChange={e => setEditingQuestion({...editingQuestion, correct_index: Number(e.target.value)})}
+                                className="w-full input-3d rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none"
+                              >
+                                <option value={0}>ตัวเลือก ก.</option>
+                                <option value={1}>ตัวเลือก ข.</option>
+                                <option value={2}>ตัวเลือก ค.</option>
+                                <option value={3}>ตัวเลือก ง.</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-xs text-slate-400 mb-1">คะแนนของข้อนี้</label>
+                              <input 
+                                type="number" 
+                                value={editingQuestion.points || 1}
+                                onChange={e => setEditingQuestion({...editingQuestion, points: Number(e.target.value)})}
+                                className="w-full input-3d rounded-xl px-4 py-2 text-xs text-slate-100"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-slate-400 mb-1">คำอธิบายเพิ่มเติม (ถ้ามี)</label>
+                              <input 
+                                type="text" 
+                                placeholder="เช่น อธิบายเฉลย..."
+                                value={editingQuestion.explanation || ''}
+                                onChange={e => setEditingQuestion({...editingQuestion, explanation: e.target.value})}
+                                className="w-full input-3d rounded-xl px-4 py-2 text-xs text-slate-100"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 pt-2">
                             <button 
-                              onClick={handleSavePreviewQuestions}
-                              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs cursor-pointer"
+                              onClick={handleSaveQuestionEdit}
+                              className="px-5 py-2 btn-3d-emerald text-white text-xs font-bold rounded-xl cursor-pointer"
                             >
-                              บันทึกลงคลังข้อสอบหลัก
+                              บันทึกข้อสอบ
+                            </button>
+                            <button 
+                              onClick={() => setEditingQuestion(null)}
+                              className="px-5 py-2 btn-3d-secondary text-slate-300 text-xs font-bold rounded-xl cursor-pointer"
+                            >
+                              ยกเลิก
                             </button>
                           </div>
                         </div>
+                      )}
 
-                        {/* Interactive Editor Preview */}
-                        <div className="space-y-4">
-                          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">ตรวจสอบความถูกต้องก่อนจัดเก็บ</p>
-                          {previewQuestions.map((q, idx) => (
-                            <div key={idx} className="bg-slate-950 p-4 border border-slate-800 rounded-2xl space-y-3">
-                              <p className="text-xs font-bold font-mono text-slate-400">คำถามทดลองข้อที่ {idx + 1}</p>
-                              <input 
-                                type="text"
-                                value={q.question_text}
-                                onChange={e => {
-                                  const updated = [...previewQuestions];
-                                  updated[idx].question_text = e.target.value;
-                                  setPreviewQuestions(updated);
-                                }}
-                                className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100"
-                              />
-
-                              <div className="grid grid-cols-2 gap-3">
+                      {/* Questions List Inside Selected Exam */}
+                      <div className="space-y-4">
+                        {activeExamQuestions.map((q, idx) => (
+                          <div key={q.id} className="bg-slate-950 p-4 border border-slate-800 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                            <div className="space-y-1">
+                              <p className="text-xs font-mono font-bold text-indigo-400">คำถามข้อที่ {idx + 1} ({q.points} คะแนน)</p>
+                              <h5 className="font-semibold text-sm text-slate-100">{q.question_text}</h5>
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2">
                                 {q.options.map((opt, oIdx) => (
-                                  <input 
-                                    key={oIdx}
-                                    type="text"
-                                    value={opt}
-                                    onChange={e => {
-                                      const updated = [...previewQuestions];
-                                      updated[idx].options[oIdx] = e.target.value;
-                                      setPreviewQuestions(updated);
-                                    }}
-                                    className={`w-full bg-slate-900 border px-3 py-1.5 text-xs rounded-xl ${
-                                      q.correct_index === oIdx ? 'border-emerald-500/40 text-emerald-300 bg-emerald-950/10' : 'border-slate-800'
+                                  <div 
+                                    key={oIdx} 
+                                    className={`px-2.5 py-1 text-[10px] rounded-lg border ${
+                                      q.correct_index === oIdx ? 'bg-emerald-950/20 text-emerald-400 border-emerald-500/20' : 'bg-slate-900 text-slate-400 border-transparent'
                                     }`}
-                                  />
+                                  >
+                                    <b>{String.fromCharCode(3555 + oIdx)}.</b> {opt}
+                                  </div>
                                 ))}
                               </div>
-
-                              <div className="flex items-center gap-4 text-xs">
-                                <div className="flex items-center gap-1">
-                                  <span className="text-slate-400">ดัชนีคำเฉลย:</span>
-                                  <select 
-                                    value={q.correct_index}
-                                    onChange={e => {
-                                      const updated = [...previewQuestions];
-                                      updated[idx].correct_index = Number(e.target.value);
-                                      setPreviewQuestions(updated);
-                                    }}
-                                    className="bg-slate-900 border border-slate-800 rounded-lg px-2 py-1"
-                                  >
-                                    <option value={0}>ก (ข้อแรก)</option>
-                                    <option value={1}>ข</option>
-                                    <option value={2}>ค</option>
-                                    <option value={3}>ง</option>
-                                  </select>
-                                </div>
-                                <div className="flex items-center gap-1">
-                                  <span className="text-slate-400">ค่าน้ำหนักคะแนน:</span>
-                                  <input 
-                                    type="number"
-                                    value={q.points}
-                                    onChange={e => {
-                                      const updated = [...previewQuestions];
-                                      updated[idx].points = Number(e.target.value);
-                                      setPreviewQuestions(updated);
-                                    }}
-                                    className="w-12 bg-slate-900 border border-slate-800 rounded-lg px-2 py-1 text-center"
-                                  />
-                                </div>
-                              </div>
+                              {q.explanation && (
+                                <p className="text-[10px] text-slate-500 italic mt-1">เฉลยอ้างอิง: {q.explanation}</p>
+                              )}
                             </div>
-                          ))}
-                        </div>
+
+                            <div className="flex items-center gap-2">
+                              <button 
+                                onClick={() => setEditingQuestion(q)}
+                                className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs cursor-pointer"
+                              >
+                                แก้ไข
+                              </button>
+                              <button 
+                                onClick={() => handleDeleteQuestion(q.id)}
+                                className="px-2.5 py-1 bg-rose-600/10 hover:bg-rose-600/20 text-rose-400 rounded text-xs cursor-pointer"
+                              >
+                                ลบ
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                        {activeExamQuestions.length === 0 && (
+                          <p className="text-xs text-center text-slate-500">ชุดข้อสอบนี้ยังไม่มีคำถาม กรุณากดปุ่มสร้างข้อสอบเพื่อเพิ่มข้อสอบข้อแรก</p>
+                        )}
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1971,7 +1880,7 @@ CREATE TABLE cheat_logs (
               {activeTab === 'students' && (
                 <div className="space-y-6">
                   {/* Excel import box and Single manual creation */}
-                  <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 md:p-6 space-y-6">
+                  <div className="card-3d rounded-3xl p-5 md:p-6 space-y-6">
                     <div>
                       <h3 className="font-bold text-base flex items-center gap-2">
                         <FileSpreadsheet className="w-5 h-5 text-emerald-400" />
@@ -1979,7 +1888,7 @@ CREATE TABLE cheat_logs (
                       </h3>
                       <p className="text-xs text-slate-400 mt-1">อัปโหลดไฟล์ตารางรายชื่อที่มีคอลัมน์: <b>รหัสนักเรียน, ชื่อ-นามสกุล, รหัสผ่าน, ห้องเรียน</b></p>
                       
-                      <div className="mt-4 border-2 border-dashed border-slate-800 rounded-2xl py-8 text-center bg-slate-950/20 hover:bg-slate-950/40 cursor-pointer transition-all relative">
+                      <div className="mt-4 border-2 border-dashed border-slate-800 rounded-2xl py-8 text-center bg-slate-950/30 hover:bg-slate-950/50 cursor-pointer shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] transition-all relative">
                         <input 
                           type="file" 
                           accept=".xlsx, .xls"
@@ -2004,7 +1913,7 @@ CREATE TABLE cheat_logs (
                             placeholder="เช่น STD005"
                             value={addStudentId}
                             onChange={e => setAddStudentId(e.target.value)}
-                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-100"
+                            className="w-full input-3d rounded-xl px-4 py-2.5 text-xs text-slate-100"
                           />
                         </div>
                         <div>
@@ -2014,7 +1923,7 @@ CREATE TABLE cheat_logs (
                             placeholder="เช่น นายขยัน เรียนมาก"
                             value={addStudentName}
                             onChange={e => setAddStudentName(e.target.value)}
-                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-100"
+                            className="w-full input-3d rounded-xl px-4 py-2.5 text-xs text-slate-100"
                           />
                         </div>
                         <div>
@@ -2024,7 +1933,7 @@ CREATE TABLE cheat_logs (
                             placeholder="เช่น ม.6/1"
                             value={addStudentClass}
                             onChange={e => setAddStudentClass(e.target.value)}
-                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-100"
+                            className="w-full input-3d rounded-xl px-4 py-2.5 text-xs text-slate-100"
                           />
                         </div>
                         <div>
@@ -2034,14 +1943,14 @@ CREATE TABLE cheat_logs (
                             placeholder="เริ่มต้นคือ 123456"
                             value={addStudentPassword}
                             onChange={e => setAddStudentPassword(e.target.value)}
-                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-100"
+                            className="w-full input-3d rounded-xl px-4 py-2.5 text-xs text-slate-100"
                           />
                         </div>
                       </div>
 
                       <button 
                         onClick={handleAddSingleStudent}
-                        className="px-6 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs cursor-pointer shadow transition-all"
+                        className="px-6 py-2.5 btn-3d-primary font-bold rounded-xl text-xs cursor-pointer"
                       >
                         เพิ่มนักเรียนเข้ากลุ่ม
                       </button>
@@ -2148,8 +2057,116 @@ CREATE TABLE cheat_logs (
 
       {/* Humble Footer */}
       <footer className="border-t border-slate-900 bg-slate-950/60 py-4 text-center text-[10px] text-slate-500 font-mono">
-        &copy; 2026 SECURE EXAM SYSTEM • POWERED BY ANTIGRAVITY AGENT & GEMINI AI
+        &copy; 2026 SECURE EXAM SYSTEM
       </footer>
+    </div>
+  );
+}
+
+function StudentBrowserBlocker({ browserInfo, onCopyLink }: { browserInfo: any, onCopyLink: () => void }) {
+  const currentUrl = window.location.href;
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(currentUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 3000);
+    onCopyLink();
+  };
+
+  return (
+    <div className="max-w-xl mx-auto my-6 bg-slate-900 border border-slate-800 rounded-3xl p-6 md:p-8 shadow-2xl relative overflow-hidden text-center space-y-6">
+      <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-amber-500 via-rose-500 to-red-500"></div>
+      
+      <div className="inline-flex bg-amber-500/10 p-4 rounded-3xl text-amber-400 border border-amber-500/20 mb-2">
+        <AlertTriangle className="w-12 h-12 animate-pulse" />
+      </div>
+      
+      <h3 className="text-2xl font-black text-amber-400">เข้าใช้งานผ่านเบราว์เซอร์เท่านั้น<br /><span className="text-sm font-semibold text-slate-300">(In-App Browser Blocked)</span></h3>
+      
+      <p className="text-sm text-slate-300 leading-relaxed">
+        ระบบตรวจสอบพบว่าคุณกำลังเข้าใช้งานผ่าน <strong className="text-rose-400">แอปพลิเคชันภายนอก</strong> (เช่น LINE, Facebook, Messenger, Instagram, WeChat) เพื่อความปลอดภัยและความบริสุทธิ์ยุติธรรมในโหมดสอบเต็มหน้าจอ (Anti-Cheat Mode)
+      </p>
+
+      {/* Browser Status Panel */}
+      <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-left space-y-3">
+        <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">สถานะการตรวจสอบความปลอดภัยของเบราว์เซอร์:</p>
+        
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+          <div className="flex items-center gap-2 p-2.5 rounded-lg bg-slate-900 border border-slate-800">
+            <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+            <span className="text-slate-300">ความเสี่ยง WebView โซเชียล:</span>
+            <span className="ml-auto font-bold text-rose-400">{browserInfo.isInApp ? 'ตรวจพบ' : 'ไม่พบ'}</span>
+          </div>
+          <div className="flex items-center gap-2 p-2.5 rounded-lg bg-slate-900 border border-slate-800">
+            <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+            <span className="text-slate-300">เบราว์เซอร์ปัจจุบัน:</span>
+            <span className="ml-auto font-bold text-amber-400 truncate max-w-[120px]">
+              {browserInfo.isChrome ? 'Chrome' : browserInfo.isSafari ? 'Safari' : 'ไม่ผ่านการรับรอง'}
+            </span>
+          </div>
+        </div>
+
+        <div className="pt-2 border-t border-slate-800 text-[11px] text-slate-400">
+          <span className="font-semibold text-rose-400">ข้อบังคับข้อสอบ:</span> นักเรียนต้องสอบผ่าน <strong className="text-white">Google Chrome</strong> หรือ <strong className="text-white">Safari</strong> เท่านั้น เบราว์เซอร์อื่นหรือในแอปจะไม่ได้รับอนุญาตให้ทำข้อสอบ
+        </div>
+      </div>
+
+      {/* Allowed Browsers Showcase */}
+      <div className="flex justify-center items-center gap-6 py-2">
+        <div className="flex flex-col items-center gap-2">
+          <div className="w-14 h-14 rounded-2xl bg-white/5 border border-slate-700/50 flex items-center justify-center text-emerald-400 p-3 shadow-inner">
+            <svg className="w-10 h-10 text-slate-200" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 0C5.37 0 0 5.37 0 12s5.37 12 12 12 12-5.37 12-12S18.63 0 12 0zm0 1.5c4.78 0 8.81 3.23 9.94 7.64L10.37 9.14a3.5 3.5 0 0 0-4.88 1.94L2.03 5.4C4.16 3.03 7.9 1.5 12 1.5zm0 10.5c0 1.93 1.57 3.5 3.5 3.5.38 0 .74-.06 1.08-.17l4.01 6.95C18.69 21.36 15.54 22.5 12 22.5 6.97 22.5 2.72 18.9 1.66 14.1l4.74-8.21c1.55.97 3.1 3.61 5.6 6.11zm1.08 1.33a3.5 3.5 0 0 0 2.42-3.33c0-1.07-.48-2.03-1.24-2.67l4.57-7.91C21.31 4.78 22.5 8.24 22.5 12c0 5.46-4.14 9.95-9.42 10.47l-1.08-1.34v-7.8z" />
+            </svg>
+          </div>
+          <span className="text-xs font-semibold text-slate-300">Chrome (เท่านั้น)</span>
+        </div>
+        <div className="text-slate-600 font-bold text-xs">หรือ</div>
+        <div className="flex flex-col items-center gap-2">
+          <div className="w-14 h-14 rounded-2xl bg-white/5 border border-slate-700/50 flex items-center justify-center text-emerald-400 p-3 shadow-inner">
+            <svg className="w-10 h-10 text-slate-200" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 0C5.383 0 0 5.383 0 12s5.383 12 12 12 12-5.383 12-12S18.617 0 12 0zm0 1.5c5.807 0 10.5 4.693 10.5 10.5S17.807 22.5 12 22.5 1.5 17.807 1.5 12 6.193 1.5 12 1.5zm.75 4.5l-2.25 4.5-4.5 2.25 4.5.75 2.25 4.5 4.5-2.25-4.5-.75z" />
+            </svg>
+          </div>
+          <span className="text-xs font-semibold text-slate-300">Safari (เท่านั้น)</span>
+        </div>
+      </div>
+
+      {/* Guide steps */}
+      <div className="text-left bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
+        <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wide flex items-center gap-2">
+          <span className="flex items-center justify-center w-5 h-5 rounded-full bg-rose-500/10 text-rose-400 text-[10px]">💡</span>
+          <span>ขั้นตอนการเปิดใช้งานด้วยเบราว์เซอร์มาตรฐาน</span>
+        </h4>
+        
+        <ol className="text-xs text-slate-400 space-y-2.5 list-decimal pl-4">
+          <li className="leading-relaxed">
+            <strong className="text-slate-200">หากใช้ LINE / Messenger:</strong> สังเกตปุ่ม <strong className="text-slate-200">จุดสามจุด (•••)</strong> หรือ <strong className="text-slate-200">เข็มทิศ/ลูกศรแชร์</strong> ที่มุมขวาบน (หรือขวาล่าง) ของแอปโซเชียลมีเดีย
+          </li>
+          <li className="leading-relaxed">
+            กดที่คำสั่ง <strong className="text-emerald-400 font-bold">"เปิดด้วยเบราว์เซอร์อื่น" (Open in Browser)</strong> หรือ <strong className="text-emerald-400 font-bold">"เปิดด้วย Chrome / Safari"</strong>
+          </li>
+          <li className="leading-relaxed">
+            <strong className="text-slate-200">หากหาเมนูดังกล่าวไม่เจอ:</strong> กดปุ่มแผงคัดลอกด้านล่างเพื่อคัดลอกที่อยู่นี้ แล้วนำไปเปิดด้วยแอป <strong className="text-emerald-400">Chrome</strong> หรือ <strong className="text-emerald-400">Safari</strong> ด้วยตัวคุณเอง
+          </li>
+        </ol>
+      </div>
+
+      {/* Action button */}
+      <div className="flex flex-col sm:flex-row items-center gap-3">
+        <button
+          onClick={handleCopy}
+          className="w-full py-3.5 bg-rose-600 hover:bg-rose-500 text-white text-sm font-bold rounded-xl flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-rose-600/20 transition-all"
+        >
+          {copied ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
+          <span>{copied ? 'คัดลอกลิงก์สอบสำเร็จแล้ว! นำไปวางใน Chrome/Safari ได้เลย' : 'คัดลอกลิงก์หน้าข้อสอบเพื่อนำไปเปิดในเบราว์เซอร์หลัก'}</span>
+        </button>
+      </div>
+
+      <p className="text-[10px] text-slate-500 truncate">
+        URL ข้อสอบปัจจุบัน: {currentUrl}
+      </p>
     </div>
   );
 }
