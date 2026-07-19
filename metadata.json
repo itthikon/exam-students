@@ -1,0 +1,6 @@
+{
+  "name": "Secure Exam System",
+  "description": "ระบบแบบทดสอบออนไลน์นิรภัยอัจฉริยะ พร้อมระบบตรวจจับและป้องกันการทุจริตเรียลไทม์ นำเข้าข้อสอบผ่าน PDF/Text ด้วย Gemini AI และแดชบอร์ดสรุปสถิติอย่างละเอียดแยกตามรายบุคคลและวิชา",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
