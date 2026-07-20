@@ -588,6 +588,40 @@ async function startServer() {
     res.json(processedQuestions);
   });
 
+  // BATCH APPEND QUESTIONS FOR AN EXAM (Append to existing)
+  app.post('/api/exams/:examId/questions/append-batch', async (req, res) => {
+    const examId = req.params.examId;
+    const { questions } = req.body; // Array of questions
+
+    if (!Array.isArray(questions)) {
+      return res.status(400).json({ error: 'ข้อมูลคำถามไม่ถูกต้อง' });
+    }
+
+    const processedQuestions = questions.map((q: any, i: number) => ({
+      id: q.id || `q_${examId}_${Date.now()}_${i}_${Math.random().toString(36).substr(2, 5)}`,
+      exam_id: examId,
+      question_text: q.question_text.trim(),
+      options: Array.isArray(q.options) ? q.options : ['ก', 'ข', 'ค', 'ง'],
+      correct_index: Number(q.correct_index !== undefined ? q.correct_index : 0),
+      points: Number(q.points || 1),
+      explanation: q.explanation ? q.explanation.trim() : ''
+    }));
+
+    if (useSupabase) {
+      try {
+        const { data, error } = await supabase.from('questions').insert(processedQuestions).select();
+        if (!error && data) return res.json(data);
+      } catch (err) {
+        console.error('Supabase batch append failed:', err);
+      }
+    }
+
+    const db = readOfflineDb();
+    db.questions.push(...processedQuestions);
+    writeOfflineDb(db);
+    res.json(processedQuestions);
+  });
+
   // DELETE QUESTION
   app.delete('/api/questions/:id', async (req, res) => {
     const id = req.params.id;
