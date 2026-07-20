@@ -325,10 +325,11 @@ export default function App() {
     setTimeout(() => setToast(null), 3000);
   };
 
-  // Fetch initial system states
-  const refreshData = async () => {
+  // Fetch initial system states with automatic retry
+  const refreshData = async (retries = 4, delay = 1000) => {
     try {
       const dbRes = await fetch('/api/db-status');
+      if (!dbRes.ok) throw new Error('Database status check failed');
       const dbData = await dbRes.json();
       setDbStatus(dbData);
 
@@ -341,6 +342,10 @@ export default function App() {
         fetch('/api/teachers')
       ]);
 
+      if (!subRes.ok || !exRes.ok || !stuRes.ok || !resRes.ok || !cheatRes.ok || !tRes.ok) {
+        throw new Error('Some API resources failed to load');
+      }
+
       setSubjects(await subRes.json());
       setExams(await exRes.json());
       setStudents(await stuRes.json());
@@ -348,7 +353,12 @@ export default function App() {
       setCheatLogs(await cheatRes.json());
       setTeachers(await tRes.json());
     } catch (e) {
-      showToast('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์หลักได้', 'error');
+      if (retries > 0) {
+        console.warn(`Connection to API server failed. Retrying in ${delay}ms... (${retries} retries left)`);
+        setTimeout(() => refreshData(retries - 1, delay * 1.5), delay);
+      } else {
+        showToast('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์หลักได้ กรุณาลองใหม่อีกครั้ง', 'error');
+      }
     }
   };
 
@@ -357,8 +367,14 @@ export default function App() {
     const interval = setInterval(() => {
       // Poll real-time cheat logs and scores for teachers
       if (userRole === 'teacher' || userRole === 'admin') {
-        fetch('/api/cheat-logs').then(r => r.json()).then(setCheatLogs);
-        fetch('/api/exam-results').then(r => r.json()).then(setExamResults);
+        fetch('/api/cheat-logs')
+          .then(r => r.ok ? r.json() : Promise.reject())
+          .then(setCheatLogs)
+          .catch(() => {});
+        fetch('/api/exam-results')
+          .then(r => r.ok ? r.json() : Promise.reject())
+          .then(setExamResults)
+          .catch(() => {});
       }
     }, 5000);
     return () => clearInterval(interval);
@@ -1127,6 +1143,40 @@ CREATE TABLE cheat_logs (
         {/* Scan lines / HUD scanner effect */}
         <div className="hud-scanner"></div>
 
+        {/* Glowing Nebulous Clouds (Galaxy Background) */}
+        <div className="absolute top-[10%] left-[20%] w-[350px] h-[350px] rounded-full bg-purple-600/15 blur-[100px] nebula-pulse" style={{ '--nebula-duration': '18s' } as React.CSSProperties}></div>
+        <div className="absolute bottom-[20%] right-[15%] w-[450px] h-[450px] rounded-full bg-pink-500/15 blur-[120px] nebula-pulse" style={{ '--nebula-duration': '24s' } as React.CSSProperties}></div>
+        <div className="absolute top-[60%] left-[45%] w-[500px] h-[500px] rounded-full bg-blue-500/15 blur-[130px] nebula-pulse" style={{ '--nebula-duration': '30s' } as React.CSSProperties}></div>
+
+        {/* Multiple Twinkling Cosmic Stars */}
+        <div className="absolute inset-0">
+          {[
+            { top: '12%', left: '8%', size: 'w-1 h-1', delay: '1.2s', color: 'bg-white' },
+            { top: '25%', left: '45%', size: 'w-1.5 h-1.5', delay: '2.5s', color: 'bg-cyan-300' },
+            { top: '8%', left: '78%', size: 'w-1 h-1', delay: '0.8s', color: 'bg-pink-300' },
+            { top: '32%', left: '88%', size: 'w-2 h-2', delay: '1.8s', color: 'bg-white' },
+            { top: '45%', left: '15%', size: 'w-1 h-1', delay: '3.1s', color: 'bg-purple-300' },
+            { top: '60%', left: '70%', size: 'w-1.5 h-1.5', delay: '1.5s', color: 'bg-amber-300' },
+            { top: '75%', left: '22%', size: 'w-2 h-2', delay: '4.2s', color: 'bg-white' },
+            { top: '85%', left: '60%', size: 'w-1 h-1', delay: '2.2s', color: 'bg-cyan-200' },
+            { top: '50%', left: '35%', size: 'w-1 h-1', delay: '0.9s', color: 'bg-white' },
+            { top: '92%', left: '12%', size: 'w-1.5 h-1.5', delay: '1.7s', color: 'bg-pink-200' },
+            { top: '65%', left: '90%', size: 'w-1 h-1', delay: '2.9s', color: 'bg-white' },
+            { top: '40%', left: '55%', size: 'w-2 h-2', delay: '3.5s', color: 'bg-cyan-400' },
+          ].map((star, idx) => (
+            <div
+              key={idx}
+              className={`absolute ${star.size} ${star.color} rounded-full galaxy-star`}
+              style={{
+                top: star.top,
+                left: star.left,
+                '--twinkle-duration': star.delay,
+                boxShadow: '0 0 6px 1px rgba(255,255,255,0.3)',
+              } as React.CSSProperties}
+            />
+          ))}
+        </div>
+
         {/* Floating Mecha Particles */}
         <div className="absolute top-1/4 left-1/10 w-2 h-2 rounded-full bg-cyan-400 mecha-particle"></div>
         <div className="absolute top-2/3 left-1/4 w-3 h-3 rounded-full bg-blue-500 mecha-particle" style={{ animationDelay: '2s' }}></div>
@@ -1146,38 +1196,36 @@ CREATE TABLE cheat_logs (
           </div>
         </div>
 
-        {/* Stylized CSS/SVG Animated Gundam robot floating in the background (Right side) */}
-        <div className="absolute bottom-10 right-4 lg:right-16 w-96 h-[500px] opacity-[0.06] flex items-center justify-center" style={{ transform: 'translateY(10%)' }}>
-          <svg className="w-full h-full text-blue-400 animate-pulse" style={{ animationDuration: '6s' }} viewBox="0 0 400 500" fill="none" xmlns="http://www.w3.org/2000/svg">
-            {/* V-Fin / Gold Head Crest */}
-            <path d="M200 130 L160 50 L180 50 L200 110 L220 50 L240 50 Z" fill="#FFCC00" stroke="#FFCC00" strokeWidth="2" />
-            <path d="M200 120 L190 80 L200 90 L210 80 Z" fill="#ff3355" stroke="#ff3355" />
-            {/* Gundam Head armor */}
-            <path d="M150 140 L250 140 L240 220 L200 240 L160 220 Z" stroke="currentColor" strokeWidth="3" fill="rgba(255,255,255,0.05)" />
-            <path d="M165 140 L235 140 L230 190 L170 190 Z" stroke="currentColor" strokeWidth="2" />
-            {/* Eyes (Glowing cyan/yellow) */}
-            <polygon points="175,175 192,175 190,183 177,183" fill="#00ffcc" stroke="#00ffcc" strokeWidth="1" className="animate-pulse" />
-            <polygon points="225,175 208,175 210,183 223,183" fill="#00ffcc" stroke="#00ffcc" strokeWidth="1" className="animate-pulse" />
-            {/* Faceplate ventilation lines */}
-            <path d="M190 200 L210 200 M188 208 L212 208 M192 216 L208 216" stroke="currentColor" strokeWidth="2" />
-            {/* Red Chin Piece */}
-            <path d="M193 225 L207 225 L204 238 L196 238 Z" fill="#ff3355" stroke="#ff3355" strokeWidth="2" />
-            {/* Neck joint */}
-            <path d="M185 240 L215 240 L210 260 L190 260 Z" stroke="currentColor" strokeWidth="2" />
-            {/* Chest Plate / Cockpit Hatch */}
-            <path d="M130 260 L270 260 L290 320 L270 380 L130 380 L110 320 Z" stroke="currentColor" strokeWidth="4" fill="rgba(0,94,237,0.05)" />
-            {/* Cockpit central red door */}
-            <path d="M175 290 L225 290 L220 340 L180 340 Z" fill="#ff3355" stroke="#ff3355" strokeWidth="2" />
-            {/* Shoulder Armor Left */}
-            <path d="M110 260 L50 270 L40 330 L100 320 Z" stroke="currentColor" strokeWidth="3" />
-            {/* Shoulder Armor Right */}
-            <path d="M290 260 L350 270 L360 330 L300 320 Z" stroke="currentColor" strokeWidth="3" />
-            {/* Tech targeting circles on the robot */}
-            <circle cx="200" cy="180" r="60" stroke="#00ffcc" strokeWidth="1" strokeDasharray="5 5" className="reticle-spin" />
-            {/* HUD Labels */}
-            <text x="270" y="160" fill="currentColor" fontSize="10" fontFamily="Orbitron">RX-78-2 GUNDAM</text>
-            <text x="270" y="175" fill="#00ffcc" fontSize="8" fontFamily="Orbitron" className="animate-pulse">PILOT LINKED: 100%</text>
-          </svg>
+        {/* Orbital rotating galaxy system */}
+        <div className="absolute top-[25%] right-[5%] lg:right-[15%] w-96 h-96 opacity-30 flex items-center justify-center scale-75 md:scale-100 lg:scale-110 pointer-events-none select-none">
+          {/* Galaxy center glowing core */}
+          <div className="absolute w-24 h-24 rounded-full bg-indigo-500/40 blur-[40px] animate-pulse"></div>
+          <div className="absolute w-12 h-12 rounded-full bg-cyan-300/60 blur-[15px] animate-pulse"></div>
+          <div className="absolute w-4 h-4 rounded-full bg-white blur-sm"></div>
+
+          {/* Spiral Orbit 1 (Purple arm) */}
+          <div className="absolute w-80 h-32 border-2 border-purple-500/20 rounded-full galaxy-spiral flex items-center justify-center" style={{ transform: 'rotate(-30deg)' }}>
+            <div className="absolute w-4 h-4 rounded-full bg-purple-400 blur-[2px] -top-2 left-1/3 animate-ping" style={{ animationDuration: '4s' }}></div>
+            <div className="absolute w-2.5 h-2.5 rounded-full bg-purple-300 -bottom-1 right-1/4"></div>
+          </div>
+
+          {/* Spiral Orbit 2 (Cyan arm) */}
+          <div className="absolute w-96 h-40 border-2 border-cyan-500/20 rounded-full galaxy-spiral flex items-center justify-center" style={{ transform: 'rotate(45deg)', animationDirection: 'reverse', animationDuration: '90s' }}>
+            <div className="absolute w-3 h-3 rounded-full bg-cyan-400 blur-[1px] -top-1 right-1/3"></div>
+            <div className="absolute w-2 h-2 rounded-full bg-white -bottom-1 left-1/4"></div>
+          </div>
+
+          {/* Spiral Orbit 3 (Pink arm) */}
+          <div className="absolute w-64 h-24 border border-pink-500/20 rounded-full galaxy-spiral" style={{ transform: 'rotate(15deg)', animationDuration: '60s' }}>
+            <div className="absolute w-2.5 h-2.5 rounded-full bg-pink-400 blur-[1px] top-1/2 -right-1"></div>
+            <div className="absolute w-1.5 h-1.5 rounded-full bg-pink-200 top-1/2 -left-1"></div>
+          </div>
+
+          {/* Orbiting Satellite Star Cluster */}
+          <div className="absolute w-[450px] h-[450px] galaxy-spiral flex items-center justify-center" style={{ animationDuration: '180s' }}>
+            <div className="absolute w-3 h-3 rounded-full bg-amber-400 blur-[2px] top-10 left-10 animate-pulse"></div>
+            <div className="absolute w-2 h-2 rounded-full bg-blue-300 bottom-10 right-10"></div>
+          </div>
         </div>
 
         {/* Tactical HUD side labels (Left side) */}
@@ -1218,9 +1266,6 @@ CREATE TABLE cheat_logs (
         <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-600 via-amber-400 to-red-600"></div>
 
         <div className="flex items-center gap-3">
-          <div className="bg-gradient-to-br from-blue-600 via-blue-700 to-red-600 p-2.5 rounded-2xl text-white border-2 border-black shadow-[3px_3px_0px_0px_rgba(255,204,0,1)] transition-transform hover:scale-110 flex items-center justify-center">
-            <Shield className="w-6 h-6 text-yellow-300 drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]" />
-          </div>
           <div>
             <h1 className="text-lg font-black tracking-widest font-display bg-gradient-to-r from-blue-400 via-slate-100 to-red-400 bg-clip-text text-transparent drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] uppercase">
               Exam System <span className="text-xs text-yellow-400">[RX-78-2]</span>
@@ -1230,20 +1275,6 @@ CREATE TABLE cheat_logs (
         </div>
 
         <div className="flex items-center gap-4">
-          {/* Supabase Status Icon Badge */}
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-slate-950 border-2 border-black text-xs shadow-[3px_3px_0px_0px_rgba(0,0,0,1)]">
-            <span className={`w-2.5 h-2.5 rounded-full ${dbStatus.useSupabase ? 'led-3d-green' : 'led-3d-amber'}`}></span>
-            <span className="text-cyan-400 font-display font-black text-[10px] tracking-wider uppercase">
-              {dbStatus.useSupabase ? 'SUPABASE: ONLINE' : 'LOCAL_DB: ACTIVE'}
-            </span>
-            <button 
-              onClick={() => setShowSqlGuide(true)} 
-              className="ml-2 text-yellow-400 hover:text-yellow-300 font-bold underline cursor-pointer"
-            >
-              [GUIDE]
-            </button>
-          </div>
-
           {userRole !== 'guest' && (
             <div className="flex items-center gap-3 pl-4 border-l-2 border-black">
               <div className="text-right hidden sm:block">
@@ -1289,13 +1320,9 @@ CREATE TABLE cheat_logs (
               <StudentBrowserBlocker browserInfo={browserInfo} onCopyLink={() => showToast('คัดลอกลิงก์สอบแล้ว!', 'success')} />
             </div>
           ) : (
-            <div className="max-w-md mx-auto my-12 card-3d rounded-3xl p-6 md:p-8 relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-rose-500 via-pink-500 to-indigo-500"></div>
+            <div className="max-w-md mx-auto my-12 card-3d rounded-3xl p-6 md:p-8 relative overflow-hidden cosmic-border-glowing">
             
             <div className="text-center mb-8">
-              <div className="inline-flex bg-rose-500/10 p-3 rounded-2xl text-rose-500 mb-3 shadow-[inset_0_2px_4px_rgba(0,0,0,0.5)]">
-                <Shield className="w-8 h-8" />
-              </div>
               <h2 className="text-2xl font-bold">เข้าสู่ระบบสอบออนไลน์</h2>
               <p className="text-sm text-slate-400 mt-1">กรุณาเลือกบทบาทของคุณครูหรือนักเรียนเพื่อดำเนินการต่อ</p>
             </div>
@@ -1325,10 +1352,10 @@ CREATE TABLE cheat_logs (
             {loginTab === 'student' ? (
               <form onSubmit={handleStudentLogin} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">รหัสประจำตัวนักเรียน (Student ID)</label>
+                  <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider pl-[9px]">รหัสประจำตัวนักเรียน (Student ID)</label>
                   <input 
                     type="text" 
-                    placeholder="ตัวอย่าง: STD001"
+                    placeholder="ตัวอย่าง: 8432"
                     value={studentIdInput}
                     onChange={e => setStudentIdInput(e.target.value)}
                     className="w-full input-3d rounded-xl px-4 py-3 placeholder-slate-600 focus:outline-none focus:border-rose-500 transition-all"
@@ -1336,7 +1363,7 @@ CREATE TABLE cheat_logs (
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">รหัสผ่าน (Password)</label>
+                  <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider pl-[12px]">รหัสผ่าน (Password)</label>
                   <input 
                     type="password" 
                     placeholder="••••••••"
@@ -1348,13 +1375,10 @@ CREATE TABLE cheat_logs (
                 </div>
                 <button 
                   type="submit" 
-                  className="w-full py-3.5 btn-3d-primary font-semibold rounded-xl cursor-pointer mt-2"
+                  className="w-full py-3.5 btn-cosmic-glow font-semibold rounded-xl cursor-pointer mt-2"
                 >
-                  เข้าสู่ระบบสอบนิรภัย
+                  เข้าสู่ระบบ
                 </button>
-                <div className="text-center text-xs text-slate-500 mt-4">
-                  มีบัญชีทดสอบเริ่มต้น: STD001 รหัสผ่าน password123
-                </div>
               </form>
             ) : (
               <div className="space-y-4">
