@@ -192,6 +192,7 @@ export default function App() {
   const [addStudentName, setAddStudentName] = useState('');
   const [addStudentPassword, setAddStudentPassword] = useState('123456');
   const [addStudentClass, setAddStudentClass] = useState('ม.6/1');
+  const [studentClassFilter, setStudentClassFilter] = useState('');
 
   // Trigger Notification
   const showToast = (message: string, type: 'success' | 'error' | 'warning' = 'success') => {
@@ -624,6 +625,32 @@ export default function App() {
       if (res.ok) {
         showToast('ลบนักเรียนเรียบร้อย');
         refreshData();
+      }
+    }
+  };
+
+  const handleDeleteClassStudents = async (classGroup: string) => {
+    if (!classGroup) {
+      if (confirm('คุณยืนยันที่จะลบรายชื่อนักเรียนทั้งหมดทุกห้องเรียนในระบบใช่หรือไม่?\n(คำเตือน: ข้อมูลนักเรียนทั้งหมดในระบบจะถูกลบออกทั้งหมด!)')) {
+        const res = await fetch('/api/students/batch/all', { method: 'DELETE' });
+        if (res.ok) {
+          showToast('ลบรายชื่อนักเรียนทั้งหมดสำเร็จแล้ว');
+          setStudentClassFilter('');
+          refreshData();
+        } else {
+          showToast('ไม่สามารถลบข้อมูลนักเรียนได้', 'error');
+        }
+      }
+    } else {
+      if (confirm(`คุณยืนยันที่จะลบรายชื่อนักเรียนทั้งหมดในห้องเรียน "${classGroup}" ใช่หรือไม่?\n(คำเตือน: ข้อมูลนักเรียนทั้งหมดในห้องนี้จะถูกลบออกทั้งหมด!)`)) {
+        const res = await fetch(`/api/students/batch/class/${encodeURIComponent(classGroup)}`, { method: 'DELETE' });
+        if (res.ok) {
+          showToast(`ลบรายชื่อนักเรียนห้อง ${classGroup} เรียบร้อยแล้ว`);
+          setStudentClassFilter('');
+          refreshData();
+        } else {
+          showToast('ไม่สามารถลบข้อมูลห้องเรียนได้', 'error');
+        }
       }
     }
   };
@@ -2206,7 +2233,42 @@ CREATE TABLE cheat_logs (
 
                     {/* Students list roster list view */}
                     <div className="pt-4 border-t border-slate-800">
-                      <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">ทะเบียนผู้เรียนปัจจุบัน</p>
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+                        <div>
+                          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">ทะเบียนผู้เรียนปัจจุบัน ({students.length} คน)</p>
+                          <p className="text-[11px] text-slate-500">กรองรายชื่อและลบรายชื่อตามกลุ่มห้องเรียน</p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-3">
+                          {/* Filter Dropdown */}
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs text-slate-400">ห้องเรียน:</span>
+                            <select
+                              value={studentClassFilter}
+                              onChange={e => setStudentClassFilter(e.target.value)}
+                              className="input-3d rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none"
+                            >
+                              <option value="">ทั้งหมด ทุกห้องเรียน</option>
+                              {Array.from(new Set(students.map(s => s.class_group))).sort().map(cls => (
+                                <option key={cls} value={cls}>{cls}</option>
+                              ))}
+                            </select>
+                          </div>
+
+                          {/* Delete entire class button */}
+                          <button
+                            onClick={() => handleDeleteClassStudents(studentClassFilter)}
+                            className={`px-3 py-1.5 text-xs font-bold rounded-lg cursor-pointer flex items-center gap-1.5 transition-all ${
+                              studentClassFilter 
+                                ? 'bg-rose-500/10 text-rose-400 hover:bg-rose-600 hover:text-white border border-rose-500/20' 
+                                : 'bg-rose-950/20 text-rose-500/60 hover:bg-rose-600 hover:text-white border border-rose-500/10'
+                            }`}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>{studentClassFilter ? `ลบรายชื่อทั้งห้อง ${studentClassFilter}` : 'ลบรายชื่อนักเรียนทั้งหมด'}</span>
+                          </button>
+                        </div>
+                      </div>
+
                       <div className="overflow-x-auto">
                         <table className="w-full text-xs text-left">
                           <thead className="bg-slate-950 text-slate-400 font-bold">
@@ -2218,7 +2280,7 @@ CREATE TABLE cheat_logs (
                             </tr>
                           </thead>
                           <tbody>
-                            {students.map(s => (
+                            {(studentClassFilter ? students.filter(s => s.class_group === studentClassFilter) : students).map(s => (
                               <tr key={s.id} className="border-b border-slate-800/50 hover:bg-slate-950/30">
                                 <td className="p-3 font-mono font-bold text-rose-400">{s.student_id}</td>
                                 <td className="p-3 font-semibold">{s.name}</td>
@@ -2226,13 +2288,20 @@ CREATE TABLE cheat_logs (
                                 <td className="p-3 text-right">
                                   <button 
                                     onClick={() => handleDeleteStudent(s.id)}
-                                    className="p-1.5 text-rose-400 hover:text-white hover:bg-rose-600 rounded-lg"
+                                    className="p-1.5 text-rose-400 hover:text-white hover:bg-rose-600 rounded-lg cursor-pointer"
                                   >
                                     <Trash2 className="w-4 h-4" />
                                   </button>
                                 </td>
                               </tr>
                             ))}
+                            {(studentClassFilter ? students.filter(s => s.class_group === studentClassFilter) : students).length === 0 && (
+                              <tr>
+                                <td colSpan={4} className="text-center py-8 text-slate-500 italic">
+                                  ไม่พบข้อมูลรายชื่อนักเรียนในเงื่อนไขการค้นหานี้
+                                </td>
+                              </tr>
+                            )}
                           </tbody>
                         </table>
                       </div>

@@ -694,6 +694,42 @@ async function startServer() {
     res.json(newStudent);
   });
 
+  // DELETE ALL STUDENTS IN SYSTEM
+  app.delete('/api/students/batch/all', async (req, res) => {
+    if (useSupabase) {
+      try {
+        const { error } = await supabase.from('students').delete().neq('id', 'placeholder_nonexistent');
+        if (!error) return res.json({ success: true });
+      } catch (err) {
+        console.error('Supabase delete all students error:', err);
+      }
+    }
+
+    const db = readOfflineDb();
+    db.students = [];
+    writeOfflineDb(db);
+    res.json({ success: true });
+  });
+
+  // DELETE STUDENTS BY CLASS GROUP
+  app.delete('/api/students/batch/class/:class_group', async (req, res) => {
+    const class_group = req.params.class_group;
+
+    if (useSupabase) {
+      try {
+        const { error } = await supabase.from('students').delete().eq('class_group', class_group);
+        if (!error) return res.json({ success: true });
+      } catch (err) {
+        console.error('Supabase delete class students error:', err);
+      }
+    }
+
+    const db = readOfflineDb();
+    db.students = db.students.filter((s: any) => s.class_group !== class_group);
+    writeOfflineDb(db);
+    res.json({ success: true });
+  });
+
   // DELETE STUDENT
   app.delete('/api/students/:id', async (req, res) => {
     const id = req.params.id;
