@@ -399,17 +399,134 @@ export default function App() {
         const wb = XLSX.read(bstr, { type: 'binary' });
         const wsname = wb.SheetNames[0];
         const ws = wb.Sheets[wsname];
-        const data = XLSX.utils.sheet_to_json(ws);
+        
+        // Use raw array of arrays to handle custom metadata headers and complex layouts (like SGS / school templates)
+        const rows = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1 });
+        let parsedStudents: any[] = [];
+        let defaultClassGroup = 'ม.6/1';
 
-        const parsedStudents = data.map((row: any) => ({
-          student_id: String(row['รหัสนักเรียน'] || row['student_id'] || row['ID'] || row['รหัสประจำตัว'] || '').trim(),
-          name: String(row['ชื่อ-นามสกุล'] || row['name'] || row['ชื่อ'] || '').trim(),
-          password: String(row['รหัสผ่าน'] || row['password'] || '123456').trim(),
-          class_group: String(row['ห้องเรียน'] || row['class_group'] || row['ห้อง'] || 'ม.6/1').trim()
-        })).filter(s => s.student_id && s.name);
+        // 1. Try to scan first 6 rows for class group (e.g. "ม.4/1", "ชั้น ม.4/1", "ม. 4/1")
+        const classPattern = /(?:ชั้น\s*)?([มป]\.?\s*\d+\s*[\/\-]\s*\d+)/i;
+        const generalClassPattern = /ชั้น\s*([^\s]+)/i;
+        
+        for (let r = 0; r < Math.min(rows.length, 6); r++) {
+          const row = rows[r];
+          if (Array.isArray(row)) {
+            for (const cell of row) {
+              if (typeof cell === 'string') {
+                const match = cell.match(classPattern);
+                if (match) {
+                  defaultClassGroup = match[1].replace(/\s+/g, '');
+                  break;
+                }
+                const generalMatch = cell.match(generalClassPattern);
+                if (generalMatch) {
+                  defaultClassGroup = generalMatch[1].trim();
+                  break;
+                }
+              }
+            }
+          }
+        }
+
+        // 2. Scan first 15 rows to find the actual header row
+        let headerRowIndex = -1;
+        let studentIdColIndex = -1;
+        let nameColIndex = -1;
+        let classColIndex = -1;
+        let passwordColIndex = -1;
+
+        for (let r = 0; r < Math.min(rows.length, 15); r++) {
+          const row = rows[r];
+          if (!Array.isArray(row)) continue;
+
+          let tempStudentIdIdx = -1;
+          let tempNameIdx = -1;
+          let tempClassIdx = -1;
+          let tempPasswordIdx = -1;
+
+          for (let c = 0; c < row.length; c++) {
+            const cellVal = String(row[c] || '').trim();
+            if (!cellVal) continue;
+
+            // Look for student ID column header
+            if (/รหัสนักเรียน|student_id|ID|รหัสประจำตัว|รหัส/i.test(cellVal)) {
+              tempStudentIdIdx = c;
+            }
+            // Look for student name column header
+            if (/ชื่อ\s*สกุล|ชื่อ\-นามสกุล|ชื่อสกุล|ชื่อ|name/i.test(cellVal)) {
+              tempNameIdx = c;
+            }
+            // Look for class group column header
+            if (/ห้องเรียน|class_group|ห้อง|ชั้น/i.test(cellVal)) {
+              tempClassIdx = c;
+            }
+            // Look for password column header
+            if (/รหัสผ่าน|password/i.test(cellVal)) {
+              tempPasswordIdx = c;
+            }
+          }
+
+          // If we found both student ID and name headers, this is our header row
+          if (tempStudentIdIdx !== -1 && tempNameIdx !== -1) {
+            headerRowIndex = r;
+            studentIdColIndex = tempStudentIdIdx;
+            nameColIndex = tempNameIdx;
+            classColIndex = tempClassIdx;
+            passwordColIndex = tempPasswordIdx;
+            break;
+          }
+        }
+
+        // 3. Extract students after the header row
+        if (headerRowIndex !== -1) {
+          for (let r = headerRowIndex + 1; r < rows.length; r++) {
+            const row = rows[r];
+            if (!Array.isArray(row)) continue;
+
+            const student_id = String(row[studentIdColIndex] || '').trim();
+            const rawName = String(row[nameColIndex] || '').trim();
+
+            if (!student_id || !rawName) continue;
+
+            // Class group
+            let class_group = defaultClassGroup;
+            if (classColIndex !== -1 && row[classColIndex]) {
+              class_group = String(row[classColIndex]).trim();
+            }
+
+            // Password (default to student_id so they can log in using their own ID)
+            let password = student_id;
+            if (passwordColIndex !== -1 && row[passwordColIndex]) {
+              password = String(row[passwordColIndex]).trim();
+            }
+
+            parsedStudents.push({
+              student_id,
+              name: rawName,
+              password,
+              class_group
+            });
+          }
+        }
+
+        // 4. Fallback: If scanned method found nothing, try the old flat-mapping approach
+        if (parsedStudents.length === 0) {
+          const flatData = XLSX.utils.sheet_to_json(ws);
+          parsedStudents = flatData.map((row: any) => {
+            const s_id = String(row['รหัสนักเรียน'] || row['student_id'] || row['ID'] || row['รหัสประจำตัว'] || '').trim();
+            const s_name = String(row['ชื่อ-นามสกุล'] || row['name'] || row['ชื่อ'] || row['ชื่อ สกุล'] || '').trim();
+            return {
+              student_id: s_id,
+              name: s_name,
+              password: String(row['รหัสผ่าน'] || row['password'] || s_id || '123456').trim(),
+              class_group: String(row['ห้องเรียน'] || row['class_group'] || row['ห้อง'] || defaultClassGroup).trim()
+            };
+          }).filter(s => s.student_id && s.name);
+        }
 
         if (parsedStudents.length === 0) {
-          return showToast('ไม่พบข้อมูลนักเรียนในไฟล์ หรือคอลัมน์ไม่ถูกต้อง (กรุณาใช้หัวข้อ รหัสนักเรียน, ชื่อ-นามสกุล, รหัสผ่าน, ห้องเรียน)', 'error');
+          return showToast('ไม่พบข้อมูลนักเรียนในไฟล์ หรือคอลัมน์ไม่ถูกต้อง (กรุณามีหัวข้ออย่างน้อย: รหัสนักเรียน และ ชื่อ สกุล)', 'error');
         }
 
         const res = await fetch('/api/students/import', {
@@ -419,7 +536,7 @@ export default function App() {
         });
 
         if (res.ok) {
-          showToast(`นำเข้ารายชื่อนักเรียนสำเร็จทั้งหมด ${parsedStudents.length} คน`);
+          showToast(`นำเข้ารายชื่อนักเรียนสำเร็จทั้งหมด ${parsedStudents.length} คน (ห้องเรียนเริ่มต้น: ${defaultClassGroup})`);
           refreshData();
         } else {
           showToast('เกิดข้อผิดพลาดในการบันทึกรายชื่อ', 'error');
@@ -429,6 +546,49 @@ export default function App() {
       }
     };
     reader.readAsBinaryString(file);
+  };
+
+  // DOWNLOAD SAMPLE EXCEL FOR STUDENT ROSTER (SGS/OBEC Standard Format)
+  const handleDownloadSampleExcel = () => {
+    try {
+      const data = [
+        ["รายชื่อนักเรียน ชั้น ม.4/1"],
+        ["ครูที่ปรึกษา 1.นางสาวศิริลักษณ์ วังวงค์ 2.นายวุฒิพงษ์ แผนสุพัด"],
+        ["เลข", "รหัสนักเรียน", "ชื่อ สกุล"],
+        [1, "8233", "นาย ธีระพัฒน์ เหง้าโอสา"],
+        [2, "8234", "นาย นนทพัทธ์ รักล้วน"],
+        [3, "8236", "นาย ปราดยาวงศ์ โสมมา"],
+        [4, "8237", "นาย พัทธดนย์ เชื้อคำจันทร์"],
+        [5, "8246", "นางสาว ชลลดา หลาบโพธิ์"],
+        [6, "8248", "นางสาว ณัฐริกา นาคมุนี"],
+        [7, "8250", "นางสาว ทิพปภา เชื้อวังคำ"],
+        [8, "8251", "นางสาว น้ำอ้อย เชื้อคำจันทร์"]
+      ];
+
+      const ws = XLSX.utils.aoa_to_sheet(data);
+
+      // Apply merges for a gorgeous and authentic look
+      ws['!merges'] = [
+        { s: { r: 0, c: 0 }, e: { r: 0, c: 2 } }, // Merge row 1 across columns A-C
+        { s: { r: 1, c: 0 }, e: { r: 1, c: 2 } }  // Merge row 2 across columns A-C
+      ];
+
+      // Set column widths so names are beautiful and not cut off
+      ws['!cols'] = [
+        { wch: 6 },  // No.
+        { wch: 15 }, // Student ID
+        { wch: 30 }  // Full Name
+      ];
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "401");
+
+      XLSX.writeFile(wb, "รายชื่อนักเรียน_ม4_1_ตัวอย่าง.xlsx");
+      showToast("ดาวน์โหลดไฟล์ตัวอย่างเรียบร้อยแล้ว!", "success");
+    } catch (err) {
+      console.error('Failed to generate sample Excel:', err);
+      showToast("ไม่สามารถสร้างไฟล์ตัวอย่างได้", "error");
+    }
   };
 
   // MANUAL SINGLE STUDENT ADD
@@ -1881,14 +2041,30 @@ CREATE TABLE cheat_logs (
                 <div className="space-y-6">
                   {/* Excel import box and Single manual creation */}
                   <div className="card-3d rounded-3xl p-5 md:p-6 space-y-6">
-                    <div>
-                      <h3 className="font-bold text-base flex items-center gap-2">
-                        <FileSpreadsheet className="w-5 h-5 text-emerald-400" />
-                        <span>นำเข้าทะเบียนรายชื่อนักเรียนผ่านไฟล์ Excel</span>
-                      </h3>
-                      <p className="text-xs text-slate-400 mt-1">อัปโหลดไฟล์ตารางรายชื่อที่มีคอลัมน์: <b>รหัสนักเรียน, ชื่อ-นามสกุล, รหัสผ่าน, ห้องเรียน</b></p>
-                      
-                      <div className="mt-4 border-2 border-dashed border-slate-800 rounded-2xl py-8 text-center bg-slate-950/30 hover:bg-slate-950/50 cursor-pointer shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] transition-all relative">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      <div>
+                        <h3 className="font-bold text-base flex items-center gap-2">
+                          <FileSpreadsheet className="w-5 h-5 text-emerald-400" />
+                          <span>นำเข้าทะเบียนรายชื่อนักเรียนผ่านไฟล์ Excel</span>
+                        </h3>
+                        <p className="text-xs text-slate-400 mt-1">
+                          รองรับโครงสร้างตารางทั่วไป และแบบรายงานรายชื่อกลุ่มห้องเรียนวิชาการ <b>(SGS/OBEC)</b> ที่มีหัวตารางหลายบรรทัดโดยอัตโนมัติ
+                        </p>
+                        <p className="text-[10px] text-slate-500 mt-1">
+                          *หากไม่มีคอลัมน์ "รหัสผ่าน" ระบบจะใช้ <b>รหัสนักเรียน</b> เป็นรหัสผ่านเริ่มต้นในการเข้าสู่ระบบโดยอัตโนมัติเพื่อความสะดวก
+                        </p>
+                      </div>
+                      <button 
+                        onClick={handleDownloadSampleExcel}
+                        className="px-4 py-2 border border-emerald-600/30 bg-emerald-600/10 text-emerald-400 hover:bg-emerald-600/20 text-xs font-bold rounded-xl flex items-center gap-2 self-start md:self-center cursor-pointer transition-all active:scale-95 shadow-sm"
+                      >
+                        <FileSpreadsheet className="w-4 h-4 text-emerald-500" />
+                        <span>ดาวน์โหลดไฟล์ตัวอย่าง (SGS ม.4/1)</span>
+                      </button>
+                    </div>
+
+                    <div className="mt-4">
+                      <div className="border-2 border-dashed border-slate-800 rounded-2xl py-8 text-center bg-slate-950/30 hover:bg-slate-950/50 cursor-pointer shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] transition-all relative">
                         <input 
                           type="file" 
                           accept=".xlsx, .xls"
