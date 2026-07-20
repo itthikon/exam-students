@@ -1,209 +1,339 @@
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Mitr:wght@400;500;600&display=swap');
 @import "tailwindcss";
 
+@theme {
+  --font-sans: "Plus Jakarta Sans", "Mitr", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Orbitron", "Mitr", sans-serif;
+}
+
+@layer base {
+  body {
+    background: radial-gradient(circle at 50% 50%, #0d1527 0%, #070913 70%, #020308 100%) !important;
+    background-attachment: fixed !important;
+    overflow-x: hidden;
+  }
+}
+
 @layer utilities {
-  /* 3D Skeuomorphic Cards */
+  /* Gundam Mecha Armor Panel (3D Card) */
   .card-3d {
-    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%) !important;
-    border: 1px solid rgba(255, 255, 255, 0.08) !important;
-    border-top: 2px solid rgba(255, 255, 255, 0.15) !important;
+    background: linear-gradient(135deg, #111827 0%, #0b0f19 100%) !important;
+    border: 3px solid #000000 !important;
+    border-radius: 1.5rem !important;
     box-shadow: 
-      0 8px 0 0 #020617,
-      0 16px 24px -4px rgba(0, 0, 0, 0.7),
-      inset 0 1px 1px rgba(255, 255, 255, 0.1) !important;
-    transform: translateY(-2px);
-    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      6px 6px 0px 0px #005eed, /* Gundam Core Blue offset */
+      10px 10px 0px 0px rgba(0, 0, 0, 0.6),
+      inset 0 2px 0px rgba(255, 255, 255, 0.08) !important;
+    transform: translate(-3px, -3px);
+    transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* Decorative panel lines inside the cards */
+  .card-3d::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 4px;
+    background: repeating-linear-gradient(90deg, #ffcc00, #ffcc00 10px, transparent 10px, transparent 20px);
+    opacity: 0.15;
   }
 
   .card-3d:hover {
-    transform: translateY(-4px);
+    transform: translate(-5px, -5px);
     box-shadow: 
-      0 12px 0 0 #020617,
-      0 20px 30px -4px rgba(0, 0, 0, 0.8),
-      inset 0 1px 1px rgba(255, 255, 255, 0.15) !important;
+      8px 8px 0px 0px #005eed,
+      14px 14px 0px 0px rgba(0, 0, 0, 0.7),
+      inset 0 2px 0px rgba(255, 255, 255, 0.15) !important;
   }
 
-  /* 3D Interactive Buttons */
+  /* Gundam Cockpit Tactical Button Styles (3D) */
+  /* Primary: Gundam Hero Red (E.F.S.F. Standard) */
   .btn-3d-primary {
-    background: linear-gradient(180deg, #f43f5e 0%, #e11d48 100%) !important;
+    background: linear-gradient(180deg, #ff3355 0%, #cc0022 100%) !important;
     color: #ffffff !important;
-    border: none !important;
-    border-top: 1px solid rgba(255, 255, 255, 0.3) !important;
-    border-left: 1px solid rgba(255, 255, 255, 0.1) !important;
-    border-right: 1px solid rgba(0, 0, 0, 0.2) !important;
+    border: 3px solid #000000 !important;
+    border-radius: 1rem !important;
     box-shadow: 
-      0 5px 0 0 #9f1239,
-      0 8px 16px rgba(0, 0, 0, 0.4) !important;
-    transform: translateY(-2px);
+      0 6px 0 0 #000000,
+      0 8px 16px rgba(255, 51, 85, 0.2) !important;
+    transform: translateY(-3px);
     transition: all 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    font-weight: 800 !important;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .btn-3d-primary::after {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -60%;
+    width: 30%;
+    height: 200%;
+    background: rgba(255, 255, 255, 0.25);
+    transform: rotate(30deg);
+    transition: all 0.5s ease;
+  }
+
+  .btn-3d-primary:hover::after {
+    left: 150%;
   }
 
   .btn-3d-primary:hover {
-    background: linear-gradient(180deg, #fb7185 0%, #f43f5e 100%) !important;
-    transform: translateY(-3px);
+    background: linear-gradient(180deg, #ff5577 0%, #e6002b 100%) !important;
+    transform: translateY(-5px);
     box-shadow: 
-      0 6px 0 0 #9f1239,
-      0 12px 20px rgba(0, 0, 0, 0.5) !important;
+      0 8px 0 0 #000000,
+      0 12px 24px rgba(255, 51, 85, 0.35) !important;
   }
 
   .btn-3d-primary:active {
     transform: translateY(3px) !important;
     box-shadow: 
-      0 0px 0 0 #9f1239,
-      0 2px 4px rgba(0, 0, 0, 0.6) !important;
+      0 0px 0 0 #000000,
+      0 2px 4px rgba(0, 0, 0, 0.4) !important;
   }
 
+  /* Secondary: Gundam Signature Blue */
   .btn-3d-secondary {
-    background: linear-gradient(180deg, #334155 0%, #1e293b 100%) !important;
-    color: #f1f5f9 !important;
-    border: none !important;
-    border-top: 1px solid rgba(255, 255, 255, 0.15) !important;
-    border-left: 1px solid rgba(255, 255, 255, 0.05) !important;
-    border-right: 1px solid rgba(0, 0, 0, 0.2) !important;
+    background: linear-gradient(180deg, #3b82f6 0%, #1d4ed8 100%) !important;
+    color: #ffffff !important;
+    border: 3px solid #000000 !important;
+    border-radius: 1rem !important;
     box-shadow: 
-      0 5px 0 0 #0f172a,
-      0 8px 16px rgba(0, 0, 0, 0.4) !important;
-    transform: translateY(-2px);
+      0 6px 0 0 #000000,
+      0 8px 16px rgba(59, 130, 246, 0.2) !important;
+    transform: translateY(-3px);
     transition: all 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    font-weight: 800 !important;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
   }
 
   .btn-3d-secondary:hover {
-    background: linear-gradient(180deg, #475569 0%, #334155 100%) !important;
-    transform: translateY(-3px);
+    background: linear-gradient(180deg, #60a5fa 0%, #2563eb 100%) !important;
+    transform: translateY(-5px);
     box-shadow: 
-      0 6px 0 0 #0f172a,
-      0 12px 20px rgba(0, 0, 0, 0.5) !important;
+      0 8px 0 0 #000000,
+      0 12px 24px rgba(59, 130, 246, 0.35) !important;
   }
 
   .btn-3d-secondary:active {
     transform: translateY(3px) !important;
     box-shadow: 
-      0 0px 0 0 #0f172a,
-      0 2px 4px rgba(0, 0, 0, 0.6) !important;
+      0 0px 0 0 #000000,
+      0 2px 4px rgba(0, 0, 0, 0.4) !important;
   }
 
+  /* Emerald: Cyber Beam Saber Green */
   .btn-3d-emerald {
-    background: linear-gradient(180deg, #10b981 0%, #059669 100%) !important;
+    background: linear-gradient(180deg, #10b981 0%, #047857 100%) !important;
     color: #ffffff !important;
-    border: none !important;
-    border-top: 1px solid rgba(255, 255, 255, 0.3) !important;
-    border-left: 1px solid rgba(255, 255, 255, 0.1) !important;
-    border-right: 1px solid rgba(0, 0, 0, 0.2) !important;
+    border: 3px solid #000000 !important;
+    border-radius: 1rem !important;
     box-shadow: 
-      0 5px 0 0 #065f46,
-      0 8px 16px rgba(0, 0, 0, 0.4) !important;
-    transform: translateY(-2px);
+      0 6px 0 0 #000000,
+      0 8px 16px rgba(16, 185, 129, 0.2) !important;
+    transform: translateY(-3px);
     transition: all 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    font-weight: 800 !important;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
   }
 
   .btn-3d-emerald:hover {
-    background: linear-gradient(180deg, #34d399 0%, #10b981 100%) !important;
-    transform: translateY(-3px);
+    background: linear-gradient(180deg, #34d399 0%, #059669 100%) !important;
+    transform: translateY(-5px);
     box-shadow: 
-      0 6px 0 0 #065f46,
-      0 12px 20px rgba(0, 0, 0, 0.5) !important;
+      0 8px 0 0 #000000,
+      0 12px 24px rgba(16, 185, 129, 0.35) !important;
   }
 
   .btn-3d-emerald:active {
     transform: translateY(3px) !important;
     box-shadow: 
-      0 0px 0 0 #065f46,
-      0 2px 4px rgba(0, 0, 0, 0.6) !important;
+      0 0px 0 0 #000000,
+      0 2px 4px rgba(0, 0, 0, 0.4) !important;
   }
 
+  /* Amber: Gundam V-Fin Golden Yellow */
   .btn-3d-amber {
-    background: linear-gradient(180deg, #f59e0b 0%, #d97706 100%) !important;
+    background: linear-gradient(180deg, #fbbf24 0%, #d97706 100%) !important;
     color: #ffffff !important;
-    border: none !important;
-    border-top: 1px solid rgba(255, 255, 255, 0.3) !important;
-    border-left: 1px solid rgba(255, 255, 255, 0.1) !important;
-    border-right: 1px solid rgba(0, 0, 0, 0.2) !important;
+    border: 3px solid #000000 !important;
+    border-radius: 1rem !important;
     box-shadow: 
-      0 5px 0 0 #92400e,
-      0 8px 16px rgba(0, 0, 0, 0.4) !important;
-    transform: translateY(-2px);
+      0 6px 0 0 #000000,
+      0 8px 16px rgba(251, 191, 36, 0.2) !important;
+    transform: translateY(-3px);
     transition: all 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    font-weight: 800 !important;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
   }
 
   .btn-3d-amber:hover {
-    background: linear-gradient(180deg, #fbbf24 0%, #f59e0b 100%) !important;
-    transform: translateY(-3px);
+    background: linear-gradient(180deg, #fcd34d 0%, #f59e0b 100%) !important;
+    transform: translateY(-5px);
     box-shadow: 
-      0 6px 0 0 #92400e,
-      0 12px 20px rgba(0, 0, 0, 0.5) !important;
+      0 8px 0 0 #000000,
+      0 12px 24px rgba(251, 191, 36, 0.35) !important;
   }
 
   .btn-3d-amber:active {
     transform: translateY(3px) !important;
     box-shadow: 
-      0 0px 0 0 #92400e,
-      0 2px 4px rgba(0, 0, 0, 0.6) !important;
+      0 0px 0 0 #000000,
+      0 2px 4px rgba(0, 0, 0, 0.4) !important;
   }
 
-  /* 3D Inset Inputs */
+  /* Cockpit HUD Inset Input Screen */
   .input-3d {
-    background-color: #0f172a !important;
-    border: 1px solid #334155 !important;
-    border-top: 2px solid #020617 !important;
-    border-left: 2px solid #020617 !important;
+    background-color: #040814 !important;
+    border: 3px solid #000000 !important;
+    border-radius: 0.85rem !important;
     box-shadow: 
-      inset 0 2px 4px rgba(0, 0, 0, 0.6),
-      0 1px 0 rgba(255, 255, 255, 0.05) !important;
-    color: #f1f5f9 !important;
+      inset 0 4px 10px rgba(0, 0, 0, 0.9),
+      0 1px 1px rgba(255, 255, 255, 0.05) !important;
+    color: #38bdf8 !important; /* Hologram Blue */
+    font-family: "Orbitron", monospace;
+    font-weight: 500;
     transition: all 0.2s;
   }
 
   .input-3d:focus {
-    border-color: #f43f5e !important;
+    border-color: #005eed !important;
     box-shadow: 
-      inset 0 2px 4px rgba(0, 0, 0, 0.6),
-      0 0 10px rgba(244, 63, 94, 0.25) !important;
+      inset 0 4px 10px rgba(0, 0, 0, 0.9),
+      0 0 15px rgba(0, 94, 237, 0.4) !important;
     outline: none;
   }
 
-  /* Status Indicator Bevel LED */
+  /* 3D Glossy Mecha LED Status Beacons */
   .led-3d-green {
-    background: radial-gradient(circle at 35% 35%, #10b981, #047857) !important;
+    background: radial-gradient(circle at 35% 35%, #00ffcc, #0d9488) !important;
+    border: 2px solid #000000 !important;
     box-shadow: 
-      inset 0 1px 1px rgba(255, 255, 255, 0.4),
-      0 2px 4px rgba(0, 0, 0, 0.4),
-      0 0 8px rgba(16, 185, 129, 0.6) !important;
+      inset 0 2px 2px rgba(255, 255, 255, 0.8),
+      0 2px 4px rgba(0, 0, 0, 0.6),
+      0 0 12px rgba(0, 255, 204, 0.9) !important;
   }
 
   .led-3d-amber {
-    background: radial-gradient(circle at 35% 35%, #f59e0b, #b45309) !important;
+    background: radial-gradient(circle at 35% 35%, #ffcc00, #ea580c) !important;
+    border: 2px solid #000000 !important;
     box-shadow: 
-      inset 0 1px 1px rgba(255, 255, 255, 0.4),
-      0 2px 4px rgba(0, 0, 0, 0.4),
-      0 0 8px rgba(245, 158, 11, 0.6) !important;
+      inset 0 2px 2px rgba(255, 255, 255, 0.8),
+      0 2px 4px rgba(0, 0, 0, 0.6),
+      0 0 12px rgba(255, 204, 0, 0.9) !important;
   }
 
   .led-3d-red {
-    background: radial-gradient(circle at 35% 35%, #f43f5e, #be123c) !important;
+    background: radial-gradient(circle at 35% 35%, #ff3355, #990011) !important;
+    border: 2px solid #000000 !important;
     box-shadow: 
-      inset 0 1px 1px rgba(255, 255, 255, 0.4),
-      0 2px 4px rgba(0, 0, 0, 0.4),
-      0 0 8px rgba(244, 63, 94, 0.6) !important;
+      inset 0 2px 2px rgba(255, 255, 255, 0.8),
+      0 2px 4px rgba(0, 0, 0, 0.6),
+      0 0 12px rgba(255, 51, 85, 0.9) !important;
   }
 
-  /* 3D Tab Menu Selectors */
+  /* Tactical 3D Heavy Tabs */
   .tab-3d-active {
-    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%) !important;
-    border: 1px solid rgba(255, 255, 255, 0.1) !important;
-    border-top: 3px solid #f43f5e !important;
+    background: linear-gradient(180deg, #1d4ed8 0%, #1e1b4b 100%) !important;
+    border: 3px solid #000000 !important;
+    border-bottom: none !important;
+    border-top: 4px solid #ffcc00 !important; /* V-Fin Yellow Gold line */
+    border-radius: 1rem 1rem 0 0 !important;
     box-shadow: 
-      0 4px 0 0 #020617,
-      inset 0 1px 1px rgba(255, 255, 255, 0.1) !important;
-    transform: translateY(-2px);
+      0 4px 0 0 #1d4ed8,
+      inset 0 2px 1px rgba(255, 255, 255, 0.2) !important;
+    transform: translateY(-3px);
+    font-weight: 800 !important;
+    color: #ffffff !important;
+    font-family: "Orbitron", sans-serif;
   }
 
   .tab-3d-inactive {
-    background: #0f172a !important;
-    border: 1px solid rgba(255, 255, 255, 0.03) !important;
-    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5) !important;
+    background: #090d16 !important;
+    border: 2px solid #000000 !important;
+    border-bottom: none !important;
+    border-radius: 0.85rem 0.85rem 0 0 !important;
+    box-shadow: inset 0 4px 8px rgba(0, 0, 0, 0.7) !important;
     transform: translateY(0);
+    color: #475569 !important;
+    font-family: "Orbitron", sans-serif;
+  }
+
+  .tab-3d-inactive:hover {
+    color: #94a3b8 !important;
+    background: #0f172a !important;
+  }
+
+  /* Gundam HUD Animated Background Elements */
+  .gundam-grid {
+    background-size: 40px 40px;
+    background-image: 
+      linear-gradient(to right, rgba(0, 94, 237, 0.04) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(0, 94, 237, 0.04) 1px, transparent 1px);
+    animation: gridScroll 20s linear infinite;
+  }
+
+  @keyframes gridScroll {
+    0% { background-position: 0 0; }
+    100% { background-position: 40px 40px; }
+  }
+
+  /* Scanning laser beam */
+  .hud-scanner {
+    width: 100%;
+    height: 6px;
+    background: linear-gradient(90deg, transparent, #00ffcc, transparent);
+    opacity: 0.3;
+    position: absolute;
+    top: 0;
+    left: 0;
+    animation: scanLines 8s linear infinite;
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  @keyframes scanLines {
+    0% { top: 0%; }
+    50% { top: 100%; }
+    100% { top: 0%; }
+  }
+
+  /* Sci-fi Target Reticle rotation */
+  .reticle-spin {
+    animation: reticleSpin 25s linear infinite;
+  }
+
+  .reticle-spin-reverse {
+    animation: reticleSpinRev 35s linear infinite;
+  }
+
+  @keyframes reticleSpin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  @keyframes reticleSpinRev {
+    from { transform: rotate(360deg); }
+    to { transform: rotate(0deg); }
+  }
+
+  /* Floating mecha dust particles */
+  .mecha-particle {
+    animation: particleFloat 12s ease-in-out infinite alternate;
+  }
+
+  @keyframes particleFloat {
+    0% { transform: translateY(0px) scale(1); opacity: 0.2; }
+    50% { transform: translateY(-40px) scale(1.2); opacity: 0.5; }
+    100% { transform: translateY(-80px) scale(1); opacity: 0.1; }
   }
 }

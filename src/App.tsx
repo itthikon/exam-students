@@ -1118,7 +1118,79 @@ CREATE TABLE cheat_logs (
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-rose-500 selection:text-white">
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-rose-500 selection:text-white relative overflow-hidden">
+      {/* Gundam Cockpit & Animated Mecha Background Layer */}
+      <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden select-none">
+        {/* Animated Cyber Grid */}
+        <div className="absolute inset-0 gundam-grid opacity-30"></div>
+
+        {/* Scan lines / HUD scanner effect */}
+        <div className="hud-scanner"></div>
+
+        {/* Floating Mecha Particles */}
+        <div className="absolute top-1/4 left-1/10 w-2 h-2 rounded-full bg-cyan-400 mecha-particle"></div>
+        <div className="absolute top-2/3 left-1/4 w-3 h-3 rounded-full bg-blue-500 mecha-particle" style={{ animationDelay: '2s' }}></div>
+        <div className="absolute top-1/3 right-1/4 w-1.5 h-1.5 rounded-full bg-pink-500 mecha-particle" style={{ animationDelay: '4s' }}></div>
+        <div className="absolute top-3/4 right-1/10 w-2.5 h-2.5 rounded-full bg-amber-400 mecha-particle" style={{ animationDelay: '6s' }}></div>
+
+        {/* Floating Tech Reticles / Cockpit HUD circles */}
+        <div className="absolute -top-12 -left-12 w-64 h-64 border border-blue-500/10 rounded-full flex items-center justify-center reticle-spin">
+          <div className="w-48 h-48 border border-dashed border-blue-500/20 rounded-full flex items-center justify-center">
+            <div className="w-32 h-32 border border-blue-500/10 rounded-full"></div>
+          </div>
+        </div>
+
+        <div className="absolute -bottom-24 -right-24 w-96 h-96 border border-cyan-500/10 rounded-full flex items-center justify-center reticle-spin-reverse">
+          <div className="w-72 h-72 border border-dashed border-cyan-500/20 rounded-full flex items-center justify-center">
+            <div className="w-48 h-48 border border-cyan-500/15 rounded-full"></div>
+          </div>
+        </div>
+
+        {/* Stylized CSS/SVG Animated Gundam robot floating in the background (Right side) */}
+        <div className="absolute bottom-10 right-4 lg:right-16 w-96 h-[500px] opacity-[0.06] flex items-center justify-center" style={{ transform: 'translateY(10%)' }}>
+          <svg className="w-full h-full text-blue-400 animate-pulse" style={{ animationDuration: '6s' }} viewBox="0 0 400 500" fill="none" xmlns="http://www.w3.org/2000/svg">
+            {/* V-Fin / Gold Head Crest */}
+            <path d="M200 130 L160 50 L180 50 L200 110 L220 50 L240 50 Z" fill="#FFCC00" stroke="#FFCC00" strokeWidth="2" />
+            <path d="M200 120 L190 80 L200 90 L210 80 Z" fill="#ff3355" stroke="#ff3355" />
+            {/* Gundam Head armor */}
+            <path d="M150 140 L250 140 L240 220 L200 240 L160 220 Z" stroke="currentColor" strokeWidth="3" fill="rgba(255,255,255,0.05)" />
+            <path d="M165 140 L235 140 L230 190 L170 190 Z" stroke="currentColor" strokeWidth="2" />
+            {/* Eyes (Glowing cyan/yellow) */}
+            <polygon points="175,175 192,175 190,183 177,183" fill="#00ffcc" stroke="#00ffcc" strokeWidth="1" className="animate-pulse" />
+            <polygon points="225,175 208,175 210,183 223,183" fill="#00ffcc" stroke="#00ffcc" strokeWidth="1" className="animate-pulse" />
+            {/* Faceplate ventilation lines */}
+            <path d="M190 200 L210 200 M188 208 L212 208 M192 216 L208 216" stroke="currentColor" strokeWidth="2" />
+            {/* Red Chin Piece */}
+            <path d="M193 225 L207 225 L204 238 L196 238 Z" fill="#ff3355" stroke="#ff3355" strokeWidth="2" />
+            {/* Neck joint */}
+            <path d="M185 240 L215 240 L210 260 L190 260 Z" stroke="currentColor" strokeWidth="2" />
+            {/* Chest Plate / Cockpit Hatch */}
+            <path d="M130 260 L270 260 L290 320 L270 380 L130 380 L110 320 Z" stroke="currentColor" strokeWidth="4" fill="rgba(0,94,237,0.05)" />
+            {/* Cockpit central red door */}
+            <path d="M175 290 L225 290 L220 340 L180 340 Z" fill="#ff3355" stroke="#ff3355" strokeWidth="2" />
+            {/* Shoulder Armor Left */}
+            <path d="M110 260 L50 270 L40 330 L100 320 Z" stroke="currentColor" strokeWidth="3" />
+            {/* Shoulder Armor Right */}
+            <path d="M290 260 L350 270 L360 330 L300 320 Z" stroke="currentColor" strokeWidth="3" />
+            {/* Tech targeting circles on the robot */}
+            <circle cx="200" cy="180" r="60" stroke="#00ffcc" strokeWidth="1" strokeDasharray="5 5" className="reticle-spin" />
+            {/* HUD Labels */}
+            <text x="270" y="160" fill="currentColor" fontSize="10" fontFamily="Orbitron">RX-78-2 GUNDAM</text>
+            <text x="270" y="175" fill="#00ffcc" fontSize="8" fontFamily="Orbitron" className="animate-pulse">PILOT LINKED: 100%</text>
+          </svg>
+        </div>
+
+        {/* Tactical HUD side labels (Left side) */}
+        <div className="absolute bottom-20 left-6 opacity-10 hidden md:flex flex-col gap-2 font-mono text-[10px] text-cyan-400">
+          <p className="border-b border-cyan-500 pb-1 font-bold">TACTICAL SENSOR MODE [NT-D]</p>
+          <p>SYSTEM BOOT: v4.18.2</p>
+          <p>REACTOR CAPACITY: 1380 KW</p>
+          <p>FRAME PRESSURE: NOMINAL</p>
+          <p>TARGET RETICLE SYNC: TRUE</p>
+          <p className="text-amber-400 animate-pulse">WARNING: DANGER CLOSE</p>
+        </div>
+      </div>
+
       {/* Toast Alert System */}
       <AnimatePresence>
         {toast && (
@@ -1141,43 +1213,46 @@ CREATE TABLE cheat_logs (
       </AnimatePresence>
 
       {/* Header Bar */}
-      <header className="border-b-4 border-slate-900 bg-slate-900/95 sticky top-0 z-40 px-6 py-4 flex items-center justify-between shadow-[0_10px_30px_rgba(0,0,0,0.6)]">
+      <header className="border-b-4 border-black bg-[#0d1326] sticky top-0 z-40 px-6 py-4 flex items-center justify-between shadow-[0_8px_0_0_rgba(0,0,0,0.4)] relative">
+        {/* Yellow V-Fin top accent on header */}
+        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-600 via-amber-400 to-red-600"></div>
+
         <div className="flex items-center gap-3">
-          <div className="bg-rose-600 p-2.5 rounded-xl text-white shadow-[0_4px_0_0_#9f1239,0_8px_16px_rgba(244,63,94,0.3)] transition-transform hover:scale-105">
-            <Shield className="w-6 h-6" />
+          <div className="bg-gradient-to-br from-blue-600 via-blue-700 to-red-600 p-2.5 rounded-2xl text-white border-2 border-black shadow-[3px_3px_0px_0px_rgba(255,204,0,1)] transition-transform hover:scale-110 flex items-center justify-center">
+            <Shield className="w-6 h-6 text-yellow-300 drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]" />
           </div>
           <div>
-            <h1 className="text-lg font-bold tracking-tight bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">
-              SECURE EXAM SYSTEM
+            <h1 className="text-lg font-black tracking-widest font-display bg-gradient-to-r from-blue-400 via-slate-100 to-red-400 bg-clip-text text-transparent drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] uppercase">
+              Exam System <span className="text-xs text-yellow-400">[RX-78-2]</span>
             </h1>
-            <p className="text-xs text-slate-400 font-mono">ระบบแบบทดสอบออนไลน์นิรภัยและป้องกันการทุจริต</p>
+            <p className="text-[9px] text-cyan-400 font-bold tracking-widest uppercase font-display">⚡ TACTICAL MECHA COCKPIT HUD ⚡</p>
           </div>
         </div>
 
         <div className="flex items-center gap-4">
           {/* Supabase Status Icon Badge */}
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700/80 text-xs">
-            <span className={`w-2 h-2 rounded-full ${dbStatus.useSupabase ? 'bg-emerald-400 shadow-emerald-500/50 shadow' : 'bg-amber-500'}`}></span>
-            <span className="text-slate-300">
-              {dbStatus.useSupabase ? 'Supabase คลาวด์ออนไลน์' : 'ออฟไลน์ (Local File DB)'}
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-slate-950 border-2 border-black text-xs shadow-[3px_3px_0px_0px_rgba(0,0,0,1)]">
+            <span className={`w-2.5 h-2.5 rounded-full ${dbStatus.useSupabase ? 'led-3d-green' : 'led-3d-amber'}`}></span>
+            <span className="text-cyan-400 font-display font-black text-[10px] tracking-wider uppercase">
+              {dbStatus.useSupabase ? 'SUPABASE: ONLINE' : 'LOCAL_DB: ACTIVE'}
             </span>
             <button 
               onClick={() => setShowSqlGuide(true)} 
-              className="ml-1 text-rose-400 hover:text-rose-300 underline cursor-pointer"
+              className="ml-2 text-yellow-400 hover:text-yellow-300 font-bold underline cursor-pointer"
             >
-              ตั้งค่าคู่มือ
+              [GUIDE]
             </button>
           </div>
 
           {userRole !== 'guest' && (
-            <div className="flex items-center gap-3 pl-4 border-l border-slate-800">
+            <div className="flex items-center gap-3 pl-4 border-l-2 border-black">
               <div className="text-right hidden sm:block">
-                <p className="text-sm font-semibold">{currentUser?.name}</p>
-                <p className="text-xs text-slate-400 capitalize">{userRole === 'admin' ? 'ผู้ดูแลระบบ (Admin)' : userRole === 'teacher' ? 'คุณครูผู้สอน' : `นักเรียน: ${currentUser?.student_id}`}</p>
+                <p className="text-sm font-extrabold text-white">{currentUser?.name}</p>
+                <p className="text-[10px] font-bold text-cyan-400 uppercase tracking-widest font-display">{userRole === 'admin' ? 'ผู้ดูแลระบบ (Admin)' : userRole === 'teacher' ? 'คุณครูผู้สอน' : `นักเรียน: ${currentUser?.student_id}`}</p>
               </div>
               <button 
                 onClick={handleLogout}
-                className="p-2 rounded-lg bg-slate-800 text-slate-400 hover:text-rose-400 hover:bg-slate-700/80 transition-all cursor-pointer"
+                className="p-2 rounded-xl bg-slate-950 text-slate-400 hover:text-red-500 hover:bg-slate-900 border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:translate-y-[-1px] hover:shadow-[3px_3px_0px_0px_rgba(255,51,85,0.3)] active:translate-y-[1px] active:shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] transition-all cursor-pointer"
                 title="ออกจากระบบ"
               >
                 <LogOut className="w-5 h-5" />
@@ -1579,7 +1654,7 @@ CREATE TABLE cheat_logs (
                                   <div className={`w-6 h-6 rounded-lg text-xs font-bold flex items-center justify-center ${
                                     isSelected ? 'bg-rose-600 text-white' : 'bg-slate-800 text-slate-400 group-hover:bg-slate-700'
                                   }`}>
-                                    {String.fromCharCode(3555 + index)} {/* ก ข ค ง in Thai unicode */}
+                                    {['ก', 'ข', 'ค', 'ง', 'จ'][index] || ''} {/* ก ข ค ง in Thai */}
                                   </div>
                                   <span className="text-sm md:text-base">{option}</span>
                                 </div>
@@ -1756,7 +1831,7 @@ CREATE TABLE cheat_logs (
                                         : 'bg-slate-950 text-slate-400 border-slate-900'
                                   }`}
                                 >
-                                  <span>{String.fromCharCode(3555 + optIdx)}. {opt}</span>
+                                  <span>{['ก', 'ข', 'ค', 'ง', 'จ'][optIdx] || ''}. {opt}</span>
                                   {isCorrectOption ? (
                                     <span className="text-[10px] font-bold bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded">คำตอบที่ถูก</span>
                                   ) : wasSelected ? (
@@ -2184,7 +2259,7 @@ CREATE TABLE cheat_logs (
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             {editingQuestion.options?.map((opt, oIdx) => (
                               <div key={oIdx} className="space-y-1">
-                                <label className="block text-[10px] text-slate-500 font-bold uppercase">ตัวเลือก {String.fromCharCode(3555 + oIdx)} (ตัวเลือกที่ {oIdx + 1})</label>
+                                <label className="block text-[10px] text-slate-500 font-bold uppercase">ตัวเลือก {['ก', 'ข', 'ค', 'ง', 'จ'][oIdx] || ''} (ตัวเลือกที่ {oIdx + 1})</label>
                                 <input 
                                   type="text" 
                                   placeholder={`พิมพ์ตัวเลือกที่ ${oIdx + 1}`}
@@ -2267,7 +2342,7 @@ CREATE TABLE cheat_logs (
                                       q.correct_index === oIdx ? 'bg-emerald-950/20 text-emerald-400 border-emerald-500/20' : 'bg-slate-900 text-slate-400 border-transparent'
                                     }`}
                                   >
-                                    <b>{String.fromCharCode(3555 + oIdx)}.</b> {opt}
+                                    <b>{['ก', 'ข', 'ค', 'ง', 'จ'][oIdx] || ''}.</b> {opt}
                                   </div>
                                 ))}
                               </div>
@@ -2629,7 +2704,7 @@ CREATE TABLE cheat_logs (
                                 }`}
                                 title="คลิกเพื่อตั้งค่าตัวเลือกนี้เป็นเฉลยที่ถูกต้อง"
                               >
-                                {String.fromCharCode(3555 + oIdx)}
+                                {['ก', 'ข', 'ค', 'ง', 'จ'][oIdx] || ''}
                               </button>
 
                               {/* Option Input */}
@@ -2801,7 +2876,7 @@ CREATE TABLE cheat_logs (
 
       {/* Humble Footer */}
       <footer className="border-t border-slate-900 bg-slate-950/60 py-4 text-center text-[10px] text-slate-500 font-mono">
-        &copy; 2026 SECURE EXAM SYSTEM
+        &copy; 2026 Exam system
       </footer>
     </div>
   );
