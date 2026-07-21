@@ -197,6 +197,7 @@ export default function App() {
   // Notifications & Copy Banner
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'warning' } | null>(null);
   const [showSqlGuide, setShowSqlGuide] = useState(false);
+  const [showLineSummaryModal, setShowLineSummaryModal] = useState(false);
 
   // Manual Add Student State
   const [addStudentId, setAddStudentId] = useState('');
@@ -2408,13 +2409,23 @@ CREATE TABLE cheat_logs (
                               <p className="text-xs text-slate-400 mt-1">แสดงผลคะแนนสอบ เวลาที่ทำข้อสอบ และสถานะพฤติกรรมเรียลไทม์ สามารถคัดกรองแยกเป็นรายห้องเรียนได้</p>
                             </div>
                             
-                            <button 
-                              onClick={refreshData}
-                              className="px-4 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-xl border border-emerald-500/20 text-xs font-semibold flex items-center gap-2 cursor-pointer self-start md:self-auto transition-all"
-                            >
-                              <RefreshCw className="w-3.5 h-3.5" />
-                              <span>ดึงข้อมูลล่าสุด</span>
-                            </button>
+                            <div className="flex flex-wrap items-center gap-2.5 self-start md:self-auto">
+                              <button 
+                                onClick={() => setShowLineSummaryModal(true)}
+                                className="px-4 py-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 rounded-xl border border-indigo-500/20 text-xs font-semibold flex items-center gap-2 cursor-pointer transition-all shadow-[0_2px_8px_rgba(99,102,241,0.05)]"
+                              >
+                                <Copy className="w-3.5 h-3.5" />
+                                <span>สรุปคะแนนส่ง LINE 💬</span>
+                              </button>
+                              
+                              <button 
+                                onClick={refreshData}
+                                className="px-4 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-xl border border-emerald-500/20 text-xs font-semibold flex items-center gap-2 cursor-pointer transition-all"
+                              >
+                                <RefreshCw className="w-3.5 h-3.5" />
+                                <span>ดึงข้อมูลล่าสุด</span>
+                              </button>
+                            </div>
                           </div>
 
                           {/* Filters Section */}
@@ -2579,6 +2590,106 @@ CREATE TABLE cheat_logs (
                             </table>
                           </div>
                         </div>
+
+                        {/* LINE Summary Preview Modal */}
+                        {showLineSummaryModal && (
+                          <div className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-sm flex items-center justify-center p-4">
+                            <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-2xl w-full p-6 space-y-4 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                              <div className="flex items-center justify-between border-b border-slate-800 pb-3 flex-shrink-0">
+                                <h3 className="font-bold text-lg flex items-center gap-2 text-indigo-400">
+                                  <span className="text-xl">💬</span>
+                                  <span>สรุปรายงานคะแนนสอบสำหรับส่งทาง LINE</span>
+                                </h3>
+                                <button 
+                                  onClick={() => setShowLineSummaryModal(false)}
+                                  className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 cursor-pointer text-slate-400 hover:text-white transition-colors"
+                                >
+                                  <XCircle className="w-5 h-5" />
+                                </button>
+                              </div>
+
+                              <div className="space-y-2 flex-shrink-0">
+                                <p className="text-xs text-slate-400">
+                                  ระบบจัดรูปแบบรายงานสรุปผลคะแนนแบบแยกคอลัมน์ รหัสประจำตัว, ชื่อ-นามสกุล, คะแนน, และเวลาทำข้อสอบให้เรียบร้อยแล้ว คุณครูสามารถคัดลอกข้อความด้านล่างนี้ไปวางส่งในแชท LINE กลุ่มห้องเรียนหรือไลน์ผู้ปกครองได้ทันที
+                                </p>
+                                
+                                {scoreDashboardExamFilter === "" && (
+                                  <div className="p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-[11px] text-amber-400 flex items-center gap-2">
+                                    <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                                    <span>คำแนะนำ: ควรกรองเลือก <b>"ชุดข้อสอบ"</b> ที่แถบด้านบน เพื่อจัดกลุ่มคะแนนสอบรายวิชาเฉพาะเรื่องก่อนส่ง</span>
+                                  </div>
+                                )}
+                              </div>
+
+                              {(() => {
+                                const selectedExamObj = exams.find(e => e.id === scoreDashboardExamFilter);
+                                const examName = selectedExamObj ? selectedExamObj.title : 'รวมทุกชุดข้อสอบ';
+                                const className = scoreDashboardClassFilter ? `ห้อง ${scoreDashboardClassFilter}` : 'ทุกห้องเรียน';
+
+                                let text = `📊 สรุปคะแนนสอบ: ${examName}\n🏫 ห้องเรียน: ${className}\n`;
+                                text += `====================================\n`;
+                                text += `รหัสประจำตัว | ชื่อ-นามสกุล | คะแนน | เวลาที่ใช้\n`;
+                                text += `====================================\n`;
+
+                                if (sortedResults.length === 0) {
+                                  text += `(ไม่มีข้อมูลนักเรียนที่ส่งสอบตามตัวกรองนี้)\n`;
+                                } else {
+                                  sortedResults.forEach((r, idx) => {
+                                    const rStart = new Date(r.start_time).getTime();
+                                    const rEnd = new Date(r.submit_time).getTime();
+                                    const rDurationSec = Math.max(0, Math.floor((rEnd - rStart) / 1000));
+                                    const rMin = Math.floor(rDurationSec / 60);
+                                    const rSec = rDurationSec % 60;
+                                    const timeStr = `${rMin}น. ${rSec}ว.`;
+
+                                    text += `${r.student_id} | ${r.student_name} | ${r.score}/${r.total_score} | ${timeStr}\n`;
+                                  });
+                                }
+
+                                text += `====================================\n`;
+                                text += `📈 ค่าสถิติภาพรวม:\n`;
+                                text += `• คะแนนเฉลี่ย: ${avgScore} คะแนน\n`;
+                                text += `• คะแนนสูงสุด: ${maxScore} คะแนน\n`;
+                                text += `• คะแนนต่ำสุด: ${minScore} คะแนน\n`;
+                                text += `• ผู้ส่งสอบทั้งหมด: ${totalCompleted} คน\n`;
+                                text += `------------------------------------\n`;
+                                text += `🛡️ ส่งผ่านระบบป้องกันการทุจริตแบบเรียลไทม์`;
+
+                                return (
+                                  <div className="space-y-4 flex flex-col flex-grow overflow-hidden">
+                                    <textarea
+                                      readOnly
+                                      value={text}
+                                      className="w-full flex-grow bg-slate-950 border border-slate-800 rounded-2xl p-4 font-mono text-xs text-emerald-400 focus:outline-none focus:ring-1 focus:ring-indigo-500 select-all resize-none"
+                                      onClick={(e) => {
+                                        (e.target as HTMLTextAreaElement).select();
+                                      }}
+                                    />
+
+                                    <div className="flex items-center justify-end gap-3 pt-2 flex-shrink-0">
+                                      <button
+                                        onClick={() => setShowLineSummaryModal(false)}
+                                        className="px-4 py-2.5 rounded-xl border border-slate-800 hover:bg-slate-800 text-slate-300 font-bold text-xs cursor-pointer transition-colors"
+                                      >
+                                        ปิดหน้าต่าง
+                                      </button>
+                                      <button
+                                        onClick={() => {
+                                          navigator.clipboard.writeText(text);
+                                          showToast('คัดลอกสรุปคะแนนสำหรับ LINE เรียบร้อยแล้ว!');
+                                        }}
+                                        className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white font-bold rounded-xl text-xs flex items-center gap-2 cursor-pointer transition-all shadow-[0_4px_12px_rgba(99,102,241,0.2)]"
+                                      >
+                                        <Copy className="w-4 h-4" />
+                                        <span>คัดลอกข้อความสรุปสำหรับ LINE</span>
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })()}
