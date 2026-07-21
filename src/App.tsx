@@ -192,6 +192,7 @@ export default function App() {
   const [examQuestions, setExamQuestions] = useState<Question[]>([]);
   const [finishedResult, setFinishedResult] = useState<ExamResult | null>(null);
   const [examStartTime, setExamStartTime] = useState<string>('');
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
 
   // Notifications & Copy Banner
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'warning' } | null>(null);
@@ -587,6 +588,34 @@ export default function App() {
       refreshData();
     } else {
       showToast('ไม่สามารถอัปเดตระดับความปลอดภัยได้', 'error');
+    }
+  };
+
+  const handleDeleteAllCheatLogs = async () => {
+    try {
+      const res = await fetch('/api/cheat-logs', { method: 'DELETE' });
+      if (res.ok) {
+        showToast('ลบประวัติการทุจริตทั้งหมดสำเร็จเรียบร้อยแล้ว');
+        refreshData();
+      } else {
+        showToast('เกิดข้อผิดพลาดในการลบประวัติการทุจริต', 'error');
+      }
+    } catch (err) {
+      showToast('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้', 'error');
+    }
+  };
+
+  const handleDeleteCheatLog = async (id: string) => {
+    try {
+      const res = await fetch(`/api/cheat-logs/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        showToast('ลบรายการแจ้งเตือนที่เลือกเรียบร้อยแล้ว');
+        refreshData();
+      } else {
+        showToast('เกิดข้อผิดพลาดในการลบรายการที่เลือก', 'error');
+      }
+    } catch (err) {
+      showToast('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้', 'error');
     }
   };
 
@@ -2642,13 +2671,46 @@ CREATE TABLE cheat_logs (
                         <AlertTriangle className="w-5 h-5 text-rose-500 animate-bounce" />
                         <span>Real-Time สอบสวนทุจริตเรียลไทม์ (Live Logs)</span>
                       </h3>
-                      <button 
-                        onClick={refreshData}
-                        className="p-1.5 bg-slate-950 border border-slate-800 rounded-lg text-slate-400 hover:text-white"
-                        title="อัปเดตข้อมูล"
-                      >
-                        <RefreshCw className="w-4 h-4" />
-                      </button>
+                      <div className="flex items-center gap-2">
+                        {cheatLogs.length > 0 && (
+                          confirmBulkDelete ? (
+                            <div className="flex items-center gap-1.5 bg-red-950/60 border border-red-900/40 p-1 px-2 rounded-xl animate-pulse">
+                              <span className="text-[10px] text-red-300 font-bold">ยืนยันการลบ?</span>
+                              <button
+                                onClick={() => {
+                                  handleDeleteAllCheatLogs();
+                                  setConfirmBulkDelete(false);
+                                }}
+                                className="px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white font-bold rounded text-[10px] cursor-pointer transition-colors"
+                              >
+                                ลบทั้งหมด
+                              </button>
+                              <button
+                                onClick={() => setConfirmBulkDelete(false)}
+                                className="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[10px] cursor-pointer transition-colors"
+                              >
+                                เลิก
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setConfirmBulkDelete(true)}
+                              className="px-2.5 py-1.5 bg-red-950/40 border border-red-500/30 text-red-400 hover:bg-red-600 hover:text-white rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer"
+                              title="ลบประวัติการทุจริตทั้งหมด"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                              <span>ลบประวัติทั้งหมด</span>
+                            </button>
+                          )
+                        )}
+                        <button 
+                          onClick={refreshData}
+                          className="p-1.5 bg-slate-950 border border-slate-800 rounded-lg text-slate-400 hover:text-white cursor-pointer"
+                          title="อัปเดตข้อมูล"
+                        >
+                          <RefreshCw className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
 
                     <div className="overflow-x-auto">
@@ -2660,30 +2722,48 @@ CREATE TABLE cheat_logs (
                             <th className="p-3">ชื่อ-นามสกุล</th>
                             <th className="p-3">การละเมิดกฎ</th>
                             <th className="p-3">รายละเอียดเชิงลึก</th>
+                            <th className="p-3 text-right">การจัดการ</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-800/60">
-                          {cheatLogs.map(cl => (
-                            <tr key={cl.id} className="bg-rose-950/5 hover:bg-rose-950/10 transition-colors">
-                              <td className="p-3 font-mono text-slate-400">{new Date(cl.timestamp).toLocaleTimeString()}</td>
-                              <td className="p-3 font-bold">{cl.student_id}</td>
-                              <td className="p-3">{cl.student_name}</td>
-                              <td className="p-3">
-                                <span className={`px-2.5 py-0.5 rounded-full font-bold ${
-                                  cl.violation_type === 'screenshot_attempt' 
-                                    ? 'bg-red-600 text-white border border-red-500 animate-pulse flex items-center gap-1 w-fit' 
-                                    : 'bg-rose-600/20 text-rose-400 border border-rose-500/20'
-                                }`}>
-                                  {cl.violation_type === 'screenshot_attempt' && <span>📸 </span>}
-                                  {cl.violation_type === 'tab_switch' ? 'สลับหน้าจอ' :
-                                   cl.violation_type === 'fullscreen_exit' ? 'ออกจากจอใหญ่' :
-                                   cl.violation_type === 'blur' ? 'เสียโฟกัส' :
-                                   cl.violation_type === 'screenshot_attempt' ? 'พยายามแคปจอสอบ!' : 'คลิกขวา'}
-                                </span>
+                          {cheatLogs.length === 0 ? (
+                            <tr>
+                              <td colSpan={6} className="p-8 text-center text-slate-500 font-medium">
+                                ไม่พบข้อมูลการละเมิดกฎการสอบสวนในขณะนี้
                               </td>
-                              <td className="p-3 text-slate-400">{cl.details}</td>
                             </tr>
-                          ))}
+                          ) : (
+                            cheatLogs.map(cl => (
+                              <tr key={cl.id} className="bg-rose-950/5 hover:bg-rose-950/10 transition-colors">
+                                <td className="p-3 font-mono text-slate-400">{new Date(cl.timestamp).toLocaleTimeString()}</td>
+                                <td className="p-3 font-bold">{cl.student_id}</td>
+                                <td className="p-3">{cl.student_name}</td>
+                                <td className="p-3">
+                                  <span className={`px-2.5 py-0.5 rounded-full font-bold ${
+                                    cl.violation_type === 'screenshot_attempt' 
+                                      ? 'bg-red-600 text-white border border-red-500 animate-pulse flex items-center gap-1 w-fit' 
+                                      : 'bg-rose-600/20 text-rose-400 border border-rose-500/20'
+                                  }`}>
+                                    {cl.violation_type === 'screenshot_attempt' && <span>📸 </span>}
+                                    {cl.violation_type === 'tab_switch' ? 'สลับหน้าจอ' :
+                                     cl.violation_type === 'fullscreen_exit' ? 'ออกจากจอใหญ่' :
+                                     cl.violation_type === 'blur' ? 'เสียโฟกัส' :
+                                     cl.violation_type === 'screenshot_attempt' ? 'พยายามแคปจอสอบ!' : 'คลิกขวา'}
+                                  </span>
+                                </td>
+                                <td className="p-3 text-slate-400">{cl.details}</td>
+                                <td className="p-3 text-right">
+                                  <button
+                                    onClick={() => handleDeleteCheatLog(cl.id)}
+                                    className="p-1 bg-red-950/40 hover:bg-red-600 text-red-400 hover:text-white border border-red-500/20 rounded transition-all cursor-pointer"
+                                    title="ลบรายการนี้"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))
+                          )}
                         </tbody>
                       </table>
                     </div>

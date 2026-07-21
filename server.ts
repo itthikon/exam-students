@@ -886,6 +886,39 @@ async function startServer() {
     res.json(db.cheat_logs);
   });
 
+  // DELETE ALL CHEAT LOGS
+  app.delete('/api/cheat-logs', async (req, res) => {
+    if (useSupabase) {
+      try {
+        const { error } = await supabase.from('cheat_logs').delete().neq('id', '');
+        if (error) console.error('Supabase bulk delete cheat logs error:', error);
+      } catch (err) {
+        console.error('Supabase bulk delete cheat logs error:', err);
+      }
+    }
+    const db = readOfflineDb();
+    db.cheat_logs = [];
+    writeOfflineDb(db);
+    res.json({ success: true, message: 'ลบประวัติการทุจริตทั้งหมดสำเร็จ' });
+  });
+
+  // DELETE SPECIFIC CHEAT LOG BY ID
+  app.delete('/api/cheat-logs/:id', async (req, res) => {
+    const id = req.params.id;
+    if (useSupabase) {
+      try {
+        const { error } = await supabase.from('cheat_logs').delete().eq('id', id);
+        if (error) console.error('Supabase delete cheat log error:', error);
+      } catch (err) {
+        console.error('Supabase delete cheat log error:', err);
+      }
+    }
+    const db = readOfflineDb();
+    db.cheat_logs = db.cheat_logs.filter((cl: any) => cl.id !== id);
+    writeOfflineDb(db);
+    res.json({ success: true, message: 'ลบประวัติรายการทุจริตที่เลือกสำเร็จ' });
+  });
+
   // GET SPECIFIC LOCK STATUS OR ALL LOCKED SESSIONS
   app.get('/api/lock-status', (req, res) => {
     const { student_id, exam_id } = req.query;
