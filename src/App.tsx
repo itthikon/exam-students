@@ -32,6 +32,7 @@ interface Exam {
   duration: number;
   randomize: boolean;
   is_active: boolean;
+  anti_cheat_level?: 'strict' | 'moderate' | 'relaxed' | 'off';
 }
 
 interface Question {
@@ -160,6 +161,7 @@ export default function App() {
   const [newExamType, setNewExamType] = useState<'midterm' | 'final' | 'quiz' | 'practice'>('quiz');
   const [newExamDuration, setNewExamDuration] = useState('30');
   const [newExamRandom, setNewExamRandom] = useState(true);
+  const [newExamAntiCheatLevel, setNewExamAntiCheatLevel] = useState<'strict' | 'moderate' | 'relaxed' | 'off'>('strict');
   const [selectedExamForQuestions, setSelectedExamForQuestions] = useState<string>('');
   const [activeExamQuestions, setActiveExamQuestions] = useState<Question[]>([]);
   const [questionsRefreshTrigger, setQuestionsRefreshTrigger] = useState(0);
@@ -541,7 +543,8 @@ export default function App() {
         title: newExamTitle,
         type: newExamType,
         duration: newExamDuration,
-        randomize: newExamRandom
+        randomize: newExamRandom,
+        anti_cheat_level: newExamAntiCheatLevel
       })
     });
     if (res.ok) {
@@ -570,6 +573,20 @@ export default function App() {
     if (res.ok) {
       showToast(`เปลี่ยนสถานะชุดข้อสอบเป็น ${!exam.is_active ? 'เปิดใช้งาน' : 'ปิดการใช้งาน'}`);
       refreshData();
+    }
+  };
+
+  const handleUpdateAntiCheatLevel = async (examId: string, level: 'strict' | 'moderate' | 'relaxed' | 'off') => {
+    const res = await fetch(`/api/exams/${examId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ anti_cheat_level: level })
+    });
+    if (res.ok) {
+      showToast('อัปเดตระดับความปลอดภัยของระบบป้องกันการทุจริตสำเร็จแล้ว');
+      refreshData();
+    } else {
+      showToast('ไม่สามารถอัปเดตระดับความปลอดภัยได้', 'error');
     }
   };
 
@@ -944,48 +961,96 @@ export default function App() {
   useEffect(() => {
     if (examState !== 'taking' || !selectedExam) return;
 
+    const level = selectedExam.anti_cheat_level || 'strict';
+
     // 1. Tab switching / Minimizing / Visibility
     const handleVisibilityChange = async () => {
+      if (level === 'off') return;
       if (document.hidden) {
-        setIsCheatLocked(true);
-        setCheatAttempts(prev => {
-          const next = prev + 1;
-          logCheatEvent('tab_switch', `สลับแท็บ/ย่อหน้าต่าง หรือเข้าโปรแกรมอื่นในระบบ (ตรวจพบครั้งที่ ${next})`);
-          return next;
-        });
+        if (level === 'strict' || level === 'moderate') {
+          setIsCheatLocked(true);
+          setCheatAttempts(prev => {
+            const next = prev + 1;
+            logCheatEvent('tab_switch', `สลับแท็บ/ย่อหน้าต่าง (ระดับ: ${level === 'strict' ? 'เข้มงวดที่สุด' : 'ปานกลาง'} - ล็อกหน้าจอครั้งที่ ${next})`);
+            return next;
+          });
+        } else {
+          // relaxed
+          setCheatAttempts(prev => {
+            const next = prev + 1;
+            logCheatEvent('tab_switch', `สลับแท็บ/ย่อหน้าต่าง (ระดับ: ผ่อนปรน - บันทึกประวัติเท่านั้น ไม่ล็อกเครื่อง ครั้งที่ ${next})`);
+            return next;
+          });
+          showToast('ระบบแจ้งเตือน: ตรวจพบการสลับแท็บ/หน้าต่าง (บันทึกเข้าระบบคุณครูเรียลไทม์แล้ว)', 'warning');
+        }
       }
     };
 
     // 2. Window Blur (e.g., clicking on developer tools, dual screen popup, or activating screenshot snipping tools)
     const handleWindowBlur = () => {
-      setIsScreenBlackout(true);
-      setIsCheatLocked(true);
-      setCheatAttempts(prev => {
-        const next = prev + 1;
-        logCheatEvent('blur', `ละสายตาจากหน้าจอสอบ หรือเริ่มโปรแกรมอื่น/โปรแกรมบันทึกภาพหน้าจอ (หน้าจอย้อมดำอัตโนมัติ ตรวจพบครั้งที่ ${next})`);
-        return next;
-      });
-      setTimeout(() => {
-        setIsScreenBlackout(false);
-      }, 2000);
+      if (level === 'off') return;
+
+      if (level === 'strict') {
+        setIsScreenBlackout(true);
+        setIsCheatLocked(true);
+        setCheatAttempts(prev => {
+          const next = prev + 1;
+          logCheatEvent('blur', `เสียโฟกัสหน้าจอสอบหรือใช้เครื่องมือแคปภาพ (ระดับ: เข้มงวดสูงสุด - บล็อกจอดำและล็อกครั้งที่ ${next})`);
+          return next;
+        });
+        setTimeout(() => {
+          setIsScreenBlackout(false);
+        }, 2000);
+      } else if (level === 'moderate') {
+        setIsScreenBlackout(true);
+        setCheatAttempts(prev => {
+          const next = prev + 1;
+          logCheatEvent('blur', `เสียโฟกัสหน้าจอสอบหรือกดปุ่มอื่นนอกขอบเขตสอบ (ระดับ: ปานกลาง - ย้อมแรเงาดำชั่วคราว ไม่ล็อกเครื่อง ครั้งที่ ${next})`);
+          return next;
+        });
+        showToast('แจ้งเตือนโฟกัส: หน้าจอจะดับดำชั่วคราวป้องกันสายตา (แต่ระบบปานกลางจะไม่ล็อกเครื่อง)', 'warning');
+        setTimeout(() => {
+          setIsScreenBlackout(false);
+        }, 2000);
+      } else {
+        // relaxed
+        setCheatAttempts(prev => {
+          const next = prev + 1;
+          logCheatEvent('blur', `เสียโฟกัสหน้าจอสอบ (ระดับ: ผ่อนปรน - บันทึกประวัติประวัติครั้งที่ ${next})`);
+          return next;
+        });
+        showToast('ระบบแจ้งเตือน: ตรวจพบเครื่องเสียโฟกัสทำข้อสอบ (บันทึกข้อมูลเรียลไทม์)', 'warning');
+      }
     };
 
     // 3. Exit Fullscreen Detection
     const handleFullscreenChange = () => {
+      if (level === 'off') return;
       const isFull = !!(document.fullscreenElement || (document as any).webkitFullscreenElement);
       setIsFullscreen(isFull);
       if (!isFull) {
-        setIsCheatLocked(true);
-        setCheatAttempts(prev => {
-          const next = prev + 1;
-          logCheatEvent('fullscreen_exit', `พยายามออกจากโหมดเต็มหน้าจอ (ครั้งที่ ${next})`);
-          return next;
-        });
+        if (level === 'strict') {
+          setIsCheatLocked(true);
+          setCheatAttempts(prev => {
+            const next = prev + 1;
+            logCheatEvent('fullscreen_exit', `ออกจากโหมดเต็มหน้าจอ (ระดับ: เข้มงวดสูงสุด - ล็อกหน้าจอครั้งที่ ${next})`);
+            return next;
+          });
+        } else {
+          // moderate or relaxed
+          setCheatAttempts(prev => {
+            const next = prev + 1;
+            logCheatEvent('fullscreen_exit', `ออกจากโหมดเต็มหน้าจอ (ระดับ: ${level === 'moderate' ? 'ปานกลาง' : 'ผ่อนปรน'} - บันทึกประวัติเท่านั้น ไม่ล็อกเครื่อง ครั้งที่ ${next})`);
+            return next;
+          });
+          showToast('คำเตือน: โปรดทำข้อสอบโหมดเต็มหน้าจอเพื่อป้องกันปัญหา (บันทึกความพยายามออกจากจอใหญ่แล้ว)', 'warning');
+        }
       }
     };
 
     // 4. Block hotkeys & Screen capture attempts (Copy, Paste, Print, Inspect, Screenshot)
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (level === 'off') return;
       const isPrtSc = e.key === 'PrintScreen' || e.keyCode === 44;
       const isSnipTool = (e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'S' || e.key === 's' || e.key === '4' || e.key === '3');
       const isCopy = e.ctrlKey && (e.key === 'c' || e.key === 'C');
@@ -996,10 +1061,19 @@ export default function App() {
       if (isPrtSc || isSnipTool || isPrint) {
         e.preventDefault();
         setIsScreenBlackout(true);
-        setIsCheatLocked(true);
-        setCheatAttempts(prev => prev + 1);
-        logCheatEvent('screenshot_attempt', 'พยายามถ่ายภาพหน้าจอหรือสั่งพิมพ์ข้อสอบ (ระบบบล็อกเนื้อหาเป็นจอสีดำสนิทเพื่อความปลอดภัยขั้นสูง)');
-        showToast('ระบบความปลอดภัยขั้นสูง: ตรวจพบความพยายามบันทึกหน้าจอ หน้าจอจะดับสีดำชั่วคราวเพื่อป้องกันข้อสอบรั่วไหล', 'error');
+
+        if (level === 'strict' || level === 'moderate') {
+          setIsCheatLocked(true);
+          setCheatAttempts(prev => prev + 1);
+          logCheatEvent('screenshot_attempt', `พยายามถ่ายภาพหน้าจอหรือสั่งพิมพ์ (ระดับ: ${level === 'strict' ? 'เข้มงวดสูงสุด' : 'ปานกลาง'} - บล็อกจอดำสนิทและล็อกหน้าจอ)`);
+          showToast('ระบบความปลอดภัย: ตรวจพบความพยายามบันทึกหน้าจอ หน้าจอจะบล็อกภาพสีดำและถูกล็อกการสอบทันที!', 'error');
+        } else {
+          // relaxed
+          setCheatAttempts(prev => prev + 1);
+          logCheatEvent('screenshot_attempt', 'พยายามถ่ายภาพหน้าจอหรือสั่งพิมพ์ (ระดับ: ผ่อนปรน - บล็อกภาพเป็นสีดำชั่วคราว บันทึกประวัติแต่ไม่ล็อกเครื่อง)');
+          showToast('ระบบความปลอดภัย: ตรวจพบความพยายามบันทึกหน้าจอ บล็อกเนื้อหาเป็นสีดำชั่วคราว (แต่ไม่ล็อกเครื่อง)', 'warning');
+        }
+
         setTimeout(() => {
           setIsScreenBlackout(false);
         }, 2000);
@@ -1015,15 +1089,16 @@ export default function App() {
       if (blockedKeys.some(Boolean)) {
         e.preventDefault();
         logCheatEvent('forbidden_shortcut', `พยายามใช้คีย์บอร์ดชอร์ตคัตต้องห้าม: ${e.key}`);
-        showToast('ความปลอดภัยสูงสุด: บล็อกทางลัดคีย์บอร์ดเพื่อป้องกันข้อมูลรั่วไหล', 'warning');
+        showToast('ระบบความปลอดภัย: บล็อกทางลัดคีย์บอร์ดเพื่อป้องกันเนื้อหาข้อสอบรั่วไหล', 'warning');
       }
     };
 
     // 5. Block right click context menu
     const handleContextMenu = (e: MouseEvent) => {
+      if (level === 'off') return;
       e.preventDefault();
-      logCheatEvent('right_click', 'พยายามคลิกขวาเปิดคำสั่ง');
-      showToast('ความปลอดภัยสูงสุด: ปิดการใช้งานปุ่มคลิกขวา', 'warning');
+      logCheatEvent('right_click', 'พยายามคลิกขวาหน้าเว็บ');
+      showToast('ระบบความปลอดภัย: ปิดการใช้งานปุ่มคลิกขวา', 'warning');
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -2760,6 +2835,84 @@ CREATE TABLE cheat_logs (
                       </label>
                     </div>
 
+                    {/* Anti-Cheat Security Level Selector */}
+                    <div className="bg-slate-950/40 p-4 border border-slate-800 rounded-2xl space-y-3">
+                      <label className="block text-xs font-bold text-rose-400">🛡️ กำหนดความเข้มงวดของระบบป้องกันการทุจริต (Anti-Cheat Security Level)</label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setNewExamAntiCheatLevel('strict')}
+                          className={`p-3 rounded-xl border text-left transition-all flex flex-col justify-between h-24 ${
+                            newExamAntiCheatLevel === 'strict'
+                              ? 'bg-red-500/10 border-red-500/40 text-red-200'
+                              : 'bg-slate-950/80 border-slate-800 hover:border-slate-700 text-slate-400'
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5 font-bold text-xs text-red-400">
+                            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+                            <span>1. เข้มงวดสูงสุด (Strict)</span>
+                          </div>
+                          <p className="text-[10px] leading-tight text-slate-400">
+                            ล็อกหน้าจอทันทีเมื่อสลับแท็บ ย่อเบราว์เซอร์ หรือละโฟกัส (พร้อมระบบแคปจอดำป้องกันการลอก)
+                          </p>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setNewExamAntiCheatLevel('moderate')}
+                          className={`p-3 rounded-xl border text-left transition-all flex flex-col justify-between h-24 ${
+                            newExamAntiCheatLevel === 'moderate'
+                              ? 'bg-amber-500/10 border-amber-500/40 text-amber-200'
+                              : 'bg-slate-950/80 border-slate-800 hover:border-slate-700 text-slate-400'
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5 font-bold text-xs text-amber-400">
+                            <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                            <span>2. ระดับปานกลาง (Moderate)</span>
+                          </div>
+                          <p className="text-[10px] leading-tight text-slate-400">
+                            ล็อกหน้าจอเมื่อสลับแท็บหรือแอบแคปจอ แต่ถ้าละหน้าโฟกัสจะเป็นแรเงาดำชั่วคราวแต่ไม่ล็อกเครื่องทันที
+                          </p>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setNewExamAntiCheatLevel('relaxed')}
+                          className={`p-3 rounded-xl border text-left transition-all flex flex-col justify-between h-24 ${
+                            newExamAntiCheatLevel === 'relaxed'
+                              ? 'bg-indigo-500/10 border-indigo-500/40 text-indigo-200'
+                              : 'bg-slate-950/80 border-slate-800 hover:border-slate-700 text-slate-400'
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5 font-bold text-xs text-indigo-400">
+                            <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
+                            <span>3. ระดับผ่อนปรน (Relaxed)</span>
+                          </div>
+                          <p className="text-[10px] leading-tight text-slate-400">
+                            ไม่ล็อกหน้าจอผู้เรียนเลย! เน้นบันทึกรายงานการทุจริตประวัติเงียบ (Silent Logs) ให้ครูตรวจสอบ
+                          </p>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setNewExamAntiCheatLevel('off')}
+                          className={`p-3 rounded-xl border text-left transition-all flex flex-col justify-between h-24 ${
+                            newExamAntiCheatLevel === 'off'
+                              ? 'bg-slate-800 border-slate-600 text-slate-200'
+                              : 'bg-slate-950/80 border-slate-800 hover:border-slate-700 text-slate-400'
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5 font-bold text-xs text-slate-300">
+                            <span className="w-2 h-2 rounded-full bg-slate-600"></span>
+                            <span>4. ปิดการป้องกัน (Off)</span>
+                          </div>
+                          <p className="text-[10px] leading-tight text-slate-400">
+                            ปิดระบบป้องกันทุจริตและการย้อมจอดำทั้งหมดอย่างสมบูรณ์ เหมาะสำหรับการฝึกซ้อมสอบ
+                          </p>
+                        </button>
+                      </div>
+                    </div>
+
                     <button 
                       onClick={handleAddExam}
                       className="py-2.5 px-6 btn-3d-primary font-bold rounded-xl text-xs cursor-pointer"
@@ -2777,7 +2930,7 @@ CREATE TABLE cheat_logs (
                         const sub = subjects.find(s => s.id === exam.subject_id);
                         return (
                           <div key={exam.id} className="bg-slate-950 p-4 border border-slate-800 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4">
-                            <div>
+                            <div className="space-y-1">
                               <div className="flex items-center gap-2">
                                 <span className="px-2 py-0.5 bg-rose-600/10 text-rose-400 border border-rose-500/20 rounded-full text-[10px] font-bold uppercase tracking-wider">
                                   {exam.type}
@@ -2786,11 +2939,41 @@ CREATE TABLE cheat_logs (
                                   <span className="text-xs text-slate-400 font-mono">[{sub.code}] {sub.name}</span>
                                 )}
                               </div>
-                              <h4 className="font-bold text-sm text-slate-200 mt-1">{exam.title}</h4>
-                              <p className="text-xs text-slate-400 mt-0.5">เวลาจำกัด {exam.duration} นาที • ระบบสุ่มคำถาม: {exam.randomize ? 'เปิดใช้งาน' : 'ปิดการใช้งาน'}</p>
+                              <h4 className="font-bold text-sm text-slate-200">{exam.title}</h4>
+                              <p className="text-xs text-slate-400">เวลาจำกัด {exam.duration} นาที • ระบบสุ่มคำถาม: {exam.randomize ? 'เปิดใช้งาน' : 'ปิดการใช้งาน'}</p>
+                              
+                              <div className="flex items-center gap-1.5 mt-2 pt-1.5 border-t border-slate-900 flex-wrap">
+                                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wide">ระดับการป้องกันทุจริต:</span>
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                                  (exam.anti_cheat_level || 'strict') === 'strict' ? 'bg-red-500/10 text-red-400 border-red-500/20' :
+                                  (exam.anti_cheat_level || 'strict') === 'moderate' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' :
+                                  (exam.anti_cheat_level || 'strict') === 'relaxed' ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20' :
+                                  'bg-slate-800 text-slate-400 border-slate-700'
+                                }`}>
+                                  {(exam.anti_cheat_level || 'strict') === 'strict' ? '🔴 เข้มงวดสูงสุด (Strict)' :
+                                   (exam.anti_cheat_level || 'strict') === 'moderate' ? '🟡 ปานกลาง (Moderate)' :
+                                   (exam.anti_cheat_level || 'strict') === 'relaxed' ? '🔵 ผ่อนปรน (Relaxed)' :
+                                   '⚫ ปิดการตรวจจับ (Off)'}
+                                </span>
+                              </div>
                             </div>
 
                             <div className="flex flex-wrap items-center gap-2.5">
+                              {/* Quick Security Level Adjuster */}
+                              <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-lg px-2 py-1">
+                                <span className="text-[10px] text-slate-400 font-medium">ปรับความปลอดภัย:</span>
+                                <select
+                                  value={exam.anti_cheat_level || 'strict'}
+                                  onChange={(e) => handleUpdateAntiCheatLevel(exam.id, e.target.value as any)}
+                                  className="bg-transparent border-0 rounded text-[10px] font-bold text-slate-200 focus:outline-none focus:ring-0 p-0 cursor-pointer"
+                                >
+                                  <option value="strict">🔴 เข้มงวดสูงสุด</option>
+                                  <option value="moderate">🟡 ปานกลาง</option>
+                                  <option value="relaxed">🔵 ผ่อนปรน</option>
+                                  <option value="off">⚫ ปิดการป้องกัน</option>
+                                </select>
+                              </div>
+
                               <button 
                                 onClick={() => {
                                   setSelectedExamForQuestions(exam.id);

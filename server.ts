@@ -417,7 +417,7 @@ async function startServer() {
 
   // CREATE EXAM
   app.post('/api/exams', async (req, res) => {
-    const { subject_id, title, type, duration, randomize } = req.body;
+    const { subject_id, title, type, duration, randomize, anti_cheat_level } = req.body;
     if (!subject_id || !title || !type || !duration) {
       return res.status(400).json({ error: 'ข้อมูลไม่ครบถ้วน' });
     }
@@ -429,7 +429,8 @@ async function startServer() {
       type,
       duration: Number(duration),
       randomize: !!randomize,
-      is_active: true
+      is_active: true,
+      anti_cheat_level: anti_cheat_level || 'strict'
     };
 
     if (useSupabase) {
@@ -447,14 +448,18 @@ async function startServer() {
     res.json(newExam);
   });
 
-  // UPDATE EXAM STATUS
+  // UPDATE EXAM STATUS / PROPERTIES
   app.patch('/api/exams/:id', async (req, res) => {
     const id = req.params.id;
-    const { is_active } = req.body;
+    const { is_active, anti_cheat_level } = req.body;
 
     if (useSupabase) {
       try {
-        const { data, error } = await supabase.from('exams').update({ is_active }).eq('id', id).select();
+        const updateObj: any = {};
+        if (is_active !== undefined) updateObj.is_active = is_active;
+        if (anti_cheat_level !== undefined) updateObj.anti_cheat_level = anti_cheat_level;
+
+        const { data, error } = await supabase.from('exams').update(updateObj).eq('id', id).select();
         if (!error && data) return res.json(data[0]);
       } catch (err) {
         console.error('Supabase update exam error:', err);
@@ -464,7 +469,8 @@ async function startServer() {
     const db = readOfflineDb();
     const index = db.exams.findIndex((e: any) => e.id === id);
     if (index !== -1) {
-      db.exams[index].is_active = is_active;
+      if (is_active !== undefined) db.exams[index].is_active = is_active;
+      if (anti_cheat_level !== undefined) db.exams[index].anti_cheat_level = anti_cheat_level;
       writeOfflineDb(db);
       res.json(db.exams[index]);
     } else {
