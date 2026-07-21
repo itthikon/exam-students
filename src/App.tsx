@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Shield, User, Lock, BookOpen, Sparkles, AlertTriangle, CheckCircle2, 
+  Shield, User, Lock, Unlock, BookOpen, Sparkles, AlertTriangle, CheckCircle2, 
   XCircle, Plus, Trash2, Upload, FileText, FileSpreadsheet, BarChart3, 
   Database, Copy, Check, RotateCcw, RefreshCw, Sliders, LogOut, 
   Clock, Settings, Search, Filter, Users, Menu, Maximize, Minimize, CheckSquare,
@@ -139,6 +139,7 @@ export default function App() {
   const [examResults, setExamResults] = useState<ExamResult[]>([]);
   const [cheatLogs, setCheatLogs] = useState<CheatLog[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [lockedStudents, setLockedStudents] = useState<any[]>([]);
 
   // UI Interactive States
   const [selectedSubjectId, setSelectedSubjectId] = useState<string>('');
@@ -181,6 +182,7 @@ export default function App() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [cheatAttempts, setCheatAttempts] = useState(0);
   const [isCheatLocked, setIsCheatLocked] = useState(false);
+  const [isScreenBlackout, setIsScreenBlackout] = useState(false);
   const [unlockTeacherEmail, setUnlockTeacherEmail] = useState('');
   const [unlockTeacherPassword, setUnlockTeacherPassword] = useState('');
   const [isUnlocking, setIsUnlocking] = useState(false);
@@ -367,13 +369,14 @@ export default function App() {
       const dbData = await dbRes.json();
       setDbStatus(dbData);
 
-      const [subRes, exRes, stuRes, resRes, cheatRes, tRes] = await Promise.all([
+      const [subRes, exRes, stuRes, resRes, cheatRes, tRes, lockRes] = await Promise.all([
         fetch('/api/subjects'),
         fetch('/api/exams'),
         fetch('/api/students'),
         fetch('/api/exam-results'),
         fetch('/api/cheat-logs'),
-        fetch('/api/teachers')
+        fetch('/api/teachers'),
+        fetch('/api/lock-status')
       ]);
 
       if (!subRes.ok || !exRes.ok || !stuRes.ok || !resRes.ok || !cheatRes.ok || !tRes.ok) {
@@ -386,6 +389,9 @@ export default function App() {
       setExamResults(await resRes.json());
       setCheatLogs(await cheatRes.json());
       setTeachers(await tRes.json());
+      if (lockRes.ok) {
+        setLockedStudents(await lockRes.json());
+      }
     } catch (e) {
       if (retries > 0) {
         console.warn(`Connection to API server failed. Retrying in ${delay}ms... (${retries} retries left)`);
@@ -408,6 +414,10 @@ export default function App() {
         fetch('/api/exam-results')
           .then(r => r.ok ? r.json() : Promise.reject())
           .then(setExamResults)
+          .catch(() => {});
+        fetch('/api/lock-status')
+          .then(r => r.ok ? r.json() : Promise.reject())
+          .then(setLockedStudents)
           .catch(() => {});
       }
     }, 5000);
@@ -946,14 +956,18 @@ export default function App() {
       }
     };
 
-    // 2. Window Blur (e.g., clicking on developer tools or dual screen popup)
+    // 2. Window Blur (e.g., clicking on developer tools, dual screen popup, or activating screenshot snipping tools)
     const handleWindowBlur = () => {
+      setIsScreenBlackout(true);
       setIsCheatLocked(true);
       setCheatAttempts(prev => {
         const next = prev + 1;
-        logCheatEvent('blur', `ละสายตาจากแท็บทำข้อสอบ หรือสลับโฟกัส (ตรวจพบครั้งที่ ${next})`);
+        logCheatEvent('blur', `ละสายตาจากหน้าจอสอบ หรือเริ่มโปรแกรมอื่น/โปรแกรมบันทึกภาพหน้าจอ (หน้าจอย้อมดำอัตโนมัติ ตรวจพบครั้งที่ ${next})`);
         return next;
       });
+      setTimeout(() => {
+        setIsScreenBlackout(false);
+      }, 2000);
     };
 
     // 3. Exit Fullscreen Detection
@@ -970,19 +984,37 @@ export default function App() {
       }
     };
 
-    // 4. Block hotkeys (Copy, Paste, Print, Inspect)
+    // 4. Block hotkeys & Screen capture attempts (Copy, Paste, Print, Inspect, Screenshot)
     const handleKeyDown = (e: KeyboardEvent) => {
+      const isPrtSc = e.key === 'PrintScreen' || e.keyCode === 44;
+      const isSnipTool = (e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'S' || e.key === 's' || e.key === '4' || e.key === '3');
+      const isCopy = e.ctrlKey && (e.key === 'c' || e.key === 'C');
+      const isPaste = e.ctrlKey && (e.key === 'v' || e.key === 'V');
+      const isPrint = (e.ctrlKey || e.metaKey) && (e.key === 'p' || e.key === 'P');
+      const isDevTools = e.key === 'F12' || (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'i'));
+
+      if (isPrtSc || isSnipTool || isPrint) {
+        e.preventDefault();
+        setIsScreenBlackout(true);
+        setIsCheatLocked(true);
+        setCheatAttempts(prev => prev + 1);
+        logCheatEvent('screenshot_attempt', 'พยายามถ่ายภาพหน้าจอหรือสั่งพิมพ์ข้อสอบ (ระบบบล็อกเนื้อหาเป็นจอสีดำสนิทเพื่อความปลอดภัยขั้นสูง)');
+        showToast('ระบบความปลอดภัยขั้นสูง: ตรวจพบความพยายามบันทึกหน้าจอ หน้าจอจะดับสีดำชั่วคราวเพื่อป้องกันข้อสอบรั่วไหล', 'error');
+        setTimeout(() => {
+          setIsScreenBlackout(false);
+        }, 2000);
+        return;
+      }
+
       const blockedKeys = [
-        e.ctrlKey && e.key === 'c', // Copy
-        e.ctrlKey && e.key === 'v', // Paste
+        isCopy,
+        isPaste,
         e.ctrlKey && e.key === 'u', // View Source
-        e.ctrlKey && e.key === 'p', // Print screen
-        e.key === 'PrintScreen', // PrintScreen
-        e.key === 'F12' // Developer tools
+        isDevTools
       ];
       if (blockedKeys.some(Boolean)) {
         e.preventDefault();
-        logCheatEvent('right_click', `พยายามใช้คีย์บอร์ดชอร์ตคัตต้องห้ามเพื่อคัดลอก/พิมพ์หน้าจอ: ${e.key}`);
+        logCheatEvent('forbidden_shortcut', `พยายามใช้คีย์บอร์ดชอร์ตคัตต้องห้าม: ${e.key}`);
         showToast('ความปลอดภัยสูงสุด: บล็อกทางลัดคีย์บอร์ดเพื่อป้องกันข้อมูลรั่วไหล', 'warning');
       }
     };
@@ -1022,6 +1054,47 @@ export default function App() {
     };
   }, [examState, selectedExam]);
 
+  useEffect(() => {
+    let intervalId: any = null;
+    if (isCheatLocked && currentUser && selectedExam && currentUser.student_id) {
+      // 1. Report lock to server
+      fetch('/api/lock-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          student_id: currentUser.student_id,
+          exam_id: selectedExam.id,
+          is_locked: true
+        })
+      }).catch(err => console.error('Error report lock status:', err));
+
+      // 2. Poll lock status from server
+      intervalId = setInterval(async () => {
+        try {
+          const res = await fetch(`/api/lock-status?student_id=${encodeURIComponent(currentUser.student_id)}&exam_id=${encodeURIComponent(selectedExam.id)}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.is_locked === false) {
+              setIsCheatLocked(false);
+              showToast('คุณครูได้ปลดล็อกหน้าจอให้คุณจากระบบควบคุมแล้ว!', 'success');
+              // Automatically request fullscreen again
+              requestFullscreen();
+              setIsFullscreen(true);
+            }
+          }
+        } catch (e) {
+          console.error('Error polling lock status:', e);
+        }
+      }, 2000);
+    }
+
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [isCheatLocked, currentUser, selectedExam]);
+
   const logCheatEvent = async (type: any, desc: string) => {
     if (!currentUser || !selectedExam) return;
     try {
@@ -1038,6 +1111,29 @@ export default function App() {
       });
     } catch (e) {
       console.error('Error logging cheat attempt:', e);
+    }
+  };
+
+  const handleRemoteUnlock = async (studentId: string, examId: string, studentName: string) => {
+    try {
+      const res = await fetch('/api/lock-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          student_id: studentId,
+          exam_id: examId,
+          is_locked: false
+        })
+      });
+      if (res.ok) {
+        setLockedStudents(prev => prev.filter(item => !(item.student_id === studentId && item.exam_id === examId)));
+        showToast(`ปลดล็อกหน้าจอเครื่องของ "${studentName}" สำเร็จ!`, 'success');
+      } else {
+        showToast('ไม่สามารถปลดล็อกหน้าจอได้ กรุณาลองใหม่อีกครั้ง', 'error');
+      }
+    } catch (e) {
+      console.error('Remote unlock error:', e);
+      showToast('เกิดข้อผิดพลาดในการติดต่อสื่อสารกับเซิร์ฟเวอร์หลัก', 'error');
     }
   };
 
@@ -1617,6 +1713,17 @@ CREATE TABLE cheat_logs (
             {/* ================= STUDENT ACTIVE TESTING SCREEN (FULLSCREEN RESTRICTED) ================= */}
             {examState === 'taking' && selectedExam && (
               <div className="fixed inset-0 z-50 bg-[#070a13] text-slate-100 flex flex-col select-none overflow-hidden">
+                {/* 100% Solid Pitch Black Screenshot Blocker */}
+                {isScreenBlackout && (
+                  <div className="fixed inset-0 bg-black z-[99999] flex flex-col items-center justify-center p-6 text-center select-none pointer-events-none">
+                    <div className="w-16 h-16 bg-rose-600/10 border border-rose-500/30 rounded-full flex items-center justify-center text-rose-500 mb-4 animate-pulse">
+                      <Lock className="w-8 h-8" />
+                    </div>
+                    <h2 className="text-xl font-bold text-rose-500">ระบบความปลอดภัยขั้นสูงสุด (Anti-Screenshot Guard)</h2>
+                    <p className="text-slate-400 text-xs mt-2">ห้ามบันทึกภาพหน้าจอหรือพิมพ์หน้าเว็บข้อสอบโดยเด็ดขาด หน้าจอถูกปิดเป็นสีดำเพื่อป้องกันข้อสอบรั่วไหล</p>
+                  </div>
+                )}
+
                 {/* Screenshot Watermark Protection Overlay */}
                 <div className="absolute inset-0 pointer-events-none grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-24 opacity-[0.03] z-10 overflow-hidden transform rotate-12 scale-110">
                   {Array.from({ length: 24 }).map((_, i) => (
@@ -1641,8 +1748,16 @@ CREATE TABLE cheat_logs (
                     <p className="text-slate-300 max-w-lg text-xs md:text-sm mb-6 leading-relaxed">
                       ตรวจพบการสลับหน้าจอสอบ ละสายตา หรือออกจากระบบสอบนิรภัย เพื่อความยุติธรรมในการสอบระบบได้ทำการล็อคหน้าจอทันที
                       <br />
-                      <span className="text-rose-400 font-bold mt-2 block">กรุณาแจ้งคุณครูผู้คุมสอบเดินมาปลดล็อกที่หน้าจอเครื่องนี้</span>
+                      <span className="text-rose-400 font-bold mt-2 block">
+                        กรุณาแจ้งคุณครูผู้คุมสอบเพื่อปลดล็อกที่เครื่องนี้ หรือรอคุณครูปลดล็อกทางไกลผ่านระบบแอดมิน
+                      </span>
                     </p>
+
+                    {/* Remote Unlock Status Indicator */}
+                    <div className="mb-6 flex items-center gap-2 px-4 py-2 bg-rose-500/10 border border-rose-500/20 rounded-full animate-pulse text-xs text-rose-300 font-semibold">
+                      <div className="w-2 h-2 rounded-full bg-rose-500 animate-ping"></div>
+                      <span>กำลังตรวจจับสัญญาณการปลดล็อกทางไกลจากเครื่องแอดมิน (Real-Time)...</span>
+                    </div>
 
                     <div className="w-full max-w-sm bg-[#0e1426]/90 border-2 border-slate-800 rounded-3xl p-5 shadow-2xl relative">
                       <div className="absolute -top-3 left-6 px-3 py-1 bg-rose-600 text-white font-mono text-[9px] font-bold rounded-full border border-black uppercase tracking-wider">
@@ -1701,6 +1816,17 @@ CREATE TABLE cheat_logs (
                                 body: JSON.stringify({ email: unlockTeacherEmail, password: unlockTeacherPassword })
                               });
                               if (res.ok) {
+                                // Clean up lock status on server
+                                fetch('/api/lock-status', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({
+                                    student_id: currentUser?.student_id,
+                                    exam_id: selectedExam?.id,
+                                    is_locked: false
+                                  })
+                                }).catch(e => console.error('Error clearing lock status:', e));
+
                                 setIsCheatLocked(false);
                                 setUnlockTeacherEmail('');
                                 setUnlockTeacherPassword('');
@@ -2353,6 +2479,87 @@ CREATE TABLE cheat_logs (
                     );
                   })()}
 
+                  {/* === REMOTE UNLOCK CONTROL CENTER === */}
+                  <div className="card-3d rounded-3xl p-5 md:p-6 space-y-4 border border-rose-500/20 relative overflow-hidden">
+                    {/* Decorative glowing gradient */}
+                    <div className="absolute -right-24 -top-24 w-48 h-48 bg-rose-500 rounded-full blur-[80px] opacity-10 pointer-events-none"></div>
+                    
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div>
+                        <h3 className="font-bold text-base flex items-center gap-2 text-rose-500">
+                          <Unlock className="w-5 h-5 text-rose-500 animate-pulse" />
+                          <span>ศูนย์ควบคุมและปลดล็อกระบบสอบทางไกล (Remote Unlock Center)</span>
+                        </h3>
+                        <p className="text-xs text-slate-400 mt-1">
+                          กรณีที่นักเรียนแอบสลับหน้าจอ ระบบจะขึ้นล็อกหน้าจอเรียลไทม์ คุณครูสามารถกดปลดล็อกให้นักเรียนจากตรงนี้ได้ทันที โดยไม่ต้องเดินไปป้อนรหัสที่หน้าจอผู้เรียน
+                        </p>
+                      </div>
+                      
+                      <div className="flex items-center gap-2">
+                        <span className="px-3 py-1 bg-rose-500/10 text-rose-400 border border-rose-500/25 text-[10px] font-mono font-bold rounded-full uppercase tracking-wider">
+                          Live Active Locks: {lockedStudents.length}
+                        </span>
+                        <button 
+                          onClick={refreshData}
+                          className="p-1.5 bg-slate-950 border border-slate-800 rounded-lg text-slate-400 hover:text-white"
+                          title="อัปเดตสถานะ"
+                        >
+                          <RefreshCw className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {lockedStudents.length === 0 ? (
+                      <div className="border border-emerald-500/20 bg-emerald-500/5 rounded-2xl p-6 text-center flex flex-col items-center justify-center space-y-2">
+                        <div className="w-10 h-10 rounded-full bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20">
+                          <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                        </div>
+                        <h4 className="font-semibold text-emerald-400 text-sm">การเชื่อมต่อทุกเครื่องเป็นปกติ</h4>
+                        <p className="text-slate-400 text-xs max-w-md">ไม่มีผู้เรียนที่ถูกล็อกหน้าจอเนื่องจากการทุจริต/สลับหน้าต่างในขณะนี้</p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {lockedStudents.map((item: any, idx: number) => {
+                          const student = students.find(s => s.student_id === item.student_id);
+                          const studentName = student ? student.name : 'ไม่พบข้อมูลนักเรียน';
+                          const classGroup = student ? student.class_group : 'ไม่ระบุห้อง';
+                          const examObj = exams.find(e => e.id === item.exam_id);
+                          const examTitle = examObj ? examObj.title : 'ชุดข้อสอบที่ถูกลบ';
+                          const lockedTimeStr = item.locked_at ? new Date(item.locked_at).toLocaleTimeString() : 'เพิ่งเมื่อสักครู่';
+
+                          return (
+                            <div 
+                              key={`${item.student_id}-${item.exam_id}-${idx}`}
+                              className="bg-slate-950/60 border border-rose-500/30 hover:border-rose-500/50 rounded-2xl p-4 flex items-center justify-between gap-4 transition-all shadow-[0_4px_12px_rgba(244,63,94,0.05)]"
+                            >
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-bold text-slate-200 text-sm">{studentName}</span>
+                                  <span className="px-2 py-0.5 bg-slate-900 text-slate-400 border border-slate-800 rounded text-[10px] font-bold">
+                                    {classGroup}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-slate-400">รหัสประจำตัว: <span className="font-mono font-bold text-slate-300">{item.student_id}</span></p>
+                                <p className="text-xs text-rose-400 font-semibold truncate max-w-[200px]" title={examTitle}>
+                                  วิชา: {examTitle}
+                                </p>
+                                <p className="text-[10px] text-slate-500">ถูกล็อกเมื่อเวลา: {lockedTimeStr}</p>
+                              </div>
+
+                              <button
+                                onClick={() => handleRemoteUnlock(item.student_id, item.exam_id, studentName)}
+                                className="px-3 py-2 bg-rose-600 hover:bg-rose-500 text-white border border-rose-700 hover:border-rose-600 font-semibold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-[0_2px_8px_rgba(244,63,94,0.2)] hover:scale-105 active:scale-95 transition-all"
+                              >
+                                <Unlock className="w-3.5 h-3.5" />
+                                <span>คลิกเพื่อปลดล็อก</span>
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
                   {/* Real-time Incident Logs Monitoring Feed */}
                   <div className="card-3d rounded-3xl p-5 md:p-6 space-y-4">
                     <div className="flex items-center justify-between">
@@ -2387,10 +2594,16 @@ CREATE TABLE cheat_logs (
                               <td className="p-3 font-bold">{cl.student_id}</td>
                               <td className="p-3">{cl.student_name}</td>
                               <td className="p-3">
-                                <span className="px-2.5 py-0.5 bg-rose-600/20 text-rose-400 border border-rose-500/20 rounded-full font-bold">
+                                <span className={`px-2.5 py-0.5 rounded-full font-bold ${
+                                  cl.violation_type === 'screenshot_attempt' 
+                                    ? 'bg-red-600 text-white border border-red-500 animate-pulse flex items-center gap-1 w-fit' 
+                                    : 'bg-rose-600/20 text-rose-400 border border-rose-500/20'
+                                }`}>
+                                  {cl.violation_type === 'screenshot_attempt' && <span>📸 </span>}
                                   {cl.violation_type === 'tab_switch' ? 'สลับหน้าจอ' :
                                    cl.violation_type === 'fullscreen_exit' ? 'ออกจากจอใหญ่' :
-                                   cl.violation_type === 'blur' ? 'เสียโฟกัส' : 'คลิกขวา'}
+                                   cl.violation_type === 'blur' ? 'เสียโฟกัส' :
+                                   cl.violation_type === 'screenshot_attempt' ? 'พยายามแคปจอสอบ!' : 'คลิกขวา'}
                                 </span>
                               </td>
                               <td className="p-3 text-slate-400">{cl.details}</td>

@@ -880,6 +880,57 @@ async function startServer() {
     res.json(db.cheat_logs);
   });
 
+  // GET SPECIFIC LOCK STATUS OR ALL LOCKED SESSIONS
+  app.get('/api/lock-status', (req, res) => {
+    const { student_id, exam_id } = req.query;
+    const db = readOfflineDb();
+    const locked_students = db.locked_students || [];
+
+    if (student_id && exam_id) {
+      const is_locked = locked_students.some(
+        (item: any) => item.student_id === student_id && item.exam_id === exam_id
+      );
+      return res.json({ is_locked });
+    }
+
+    res.json(locked_students);
+  });
+
+  // LOCK / UNLOCK STUDENT SESSION (FOR SCREEN SWITCH BYPASS)
+  app.post('/api/lock-status', (req, res) => {
+    const { student_id, exam_id, is_locked } = req.body;
+    if (!student_id || !exam_id) {
+      return res.status(400).json({ error: 'ข้อมูลไม่ครบถ้วน' });
+    }
+
+    const db = readOfflineDb();
+    if (!db.locked_students) {
+      db.locked_students = [];
+    }
+
+    if (is_locked) {
+      // Add if not exists
+      const exists = db.locked_students.some(
+        (item: any) => item.student_id === student_id && item.exam_id === exam_id
+      );
+      if (!exists) {
+        db.locked_students.push({ 
+          student_id, 
+          exam_id, 
+          locked_at: new Date().toISOString() 
+        });
+      }
+    } else {
+      // Remove
+      db.locked_students = db.locked_students.filter(
+        (item: any) => !(item.student_id === student_id && item.exam_id === exam_id)
+      );
+    }
+
+    writeOfflineDb(db);
+    res.json({ success: true, is_locked });
+  });
+
   // ADMIN ENDPOINT: UPDATE USER ROLE OR DETAILS
   app.post('/api/teachers', async (req, res) => {
     const { email, name, role, password } = req.body;

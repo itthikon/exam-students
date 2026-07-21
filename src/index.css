@@ -447,3 +447,12 @@
       0 2px 4px rgba(0, 0, 0, 0.4) !important;
   }
 }
+
+/* Prevent printing & hide content under print preview/saving screen capture */
+@media print {
+  body, html, #root, .fixed, .absolute, main, div {
+    display: none !important;
+    background: #000000 !important;
+    color: #000000 !important;
+  }
+}
