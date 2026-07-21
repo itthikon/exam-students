@@ -3,7 +3,8 @@ import {
   Shield, User, Lock, BookOpen, Sparkles, AlertTriangle, CheckCircle2, 
   XCircle, Plus, Trash2, Upload, FileText, FileSpreadsheet, BarChart3, 
   Database, Copy, Check, RotateCcw, RefreshCw, Sliders, LogOut, 
-  Clock, Settings, Search, Filter, Users, Menu, Maximize, Minimize, CheckSquare
+  Clock, Settings, Search, Filter, Users, Menu, Maximize, Minimize, CheckSquare,
+  Brain, TrendingUp
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
@@ -127,7 +128,7 @@ export default function App() {
   const [userRole, setUserRole] = useState<'guest' | 'student' | 'teacher' | 'admin'>('guest');
   const [browserInfo, setBrowserInfo] = useState(detectBrowser);
   const [currentUser, setCurrentUser] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<'students' | 'subjects' | 'exams' | 'stats'>('stats');
+  const [activeTab, setActiveTab] = useState<'students' | 'subjects' | 'exams' | 'stats' | 'analysis'>('stats');
   const [dbStatus, setDbStatus] = useState({ useSupabase: false });
 
   // DB Data States
@@ -179,6 +180,11 @@ export default function App() {
   const [timeLeft, setTimeLeft] = useState(0); // in seconds
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [cheatAttempts, setCheatAttempts] = useState(0);
+  const [isCheatLocked, setIsCheatLocked] = useState(false);
+  const [unlockTeacherEmail, setUnlockTeacherEmail] = useState('');
+  const [unlockTeacherPassword, setUnlockTeacherPassword] = useState('');
+  const [isUnlocking, setIsUnlocking] = useState(false);
+  const [unlockError, setUnlockError] = useState('');
   const [examQuestions, setExamQuestions] = useState<Question[]>([]);
   const [finishedResult, setFinishedResult] = useState<ExamResult | null>(null);
   const [examStartTime, setExamStartTime] = useState<string>('');
@@ -193,6 +199,34 @@ export default function App() {
   const [addStudentPassword, setAddStudentPassword] = useState('123456');
   const [addStudentClass, setAddStudentClass] = useState('ม.6/1');
   const [studentClassFilter, setStudentClassFilter] = useState('');
+  const [scoreDashboardClassFilter, setScoreDashboardClassFilter] = useState('');
+  const [scoreDashboardExamFilter, setScoreDashboardExamFilter] = useState('');
+  const [scoreDashboardSearch, setScoreDashboardSearch] = useState('');
+
+  // Psychometric/CTT analysis states
+  const [analysisSelectedExamId, setAnalysisSelectedExamId] = useState<string>('');
+  const [analysisSelectedClass, setAnalysisSelectedClass] = useState<string>('');
+  const [analysisQuestionFilter, setAnalysisQuestionFilter] = useState<'all' | 'good' | 'poor' | 'flawed'>('all');
+  const [analysisQuestions, setAnalysisQuestions] = useState<Question[]>([]);
+  const [isAnalysisLoading, setIsAnalysisLoading] = useState<boolean>(false);
+  const [analysisExpandedQuestionId, setAnalysisExpandedQuestionId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (analysisSelectedExamId) {
+      setIsAnalysisLoading(true);
+      fetch(`/api/exams/${analysisSelectedExamId}/questions`)
+        .then(res => res.json())
+        .then(data => {
+          setAnalysisQuestions(data);
+          setIsAnalysisLoading(false);
+        })
+        .catch(() => {
+          setIsAnalysisLoading(false);
+        });
+    } else {
+      setAnalysisQuestions([]);
+    }
+  }, [analysisSelectedExamId]);
 
   // Text Importer States
   const [isTextImporterOpen, setIsTextImporterOpen] = useState(false);
@@ -887,6 +921,7 @@ export default function App() {
     setStudentAnswers({});
     setTimeLeft(exam.duration * 60);
     setCheatAttempts(0);
+    setIsCheatLocked(false);
     setExamStartTime(new Date().toISOString());
     setExamState('taking');
 
@@ -902,6 +937,7 @@ export default function App() {
     // 1. Tab switching / Minimizing / Visibility
     const handleVisibilityChange = async () => {
       if (document.hidden) {
+        setIsCheatLocked(true);
         setCheatAttempts(prev => {
           const next = prev + 1;
           logCheatEvent('tab_switch', `สลับแท็บ/ย่อหน้าต่าง หรือเข้าโปรแกรมอื่นในระบบ (ตรวจพบครั้งที่ ${next})`);
@@ -912,6 +948,7 @@ export default function App() {
 
     // 2. Window Blur (e.g., clicking on developer tools or dual screen popup)
     const handleWindowBlur = () => {
+      setIsCheatLocked(true);
       setCheatAttempts(prev => {
         const next = prev + 1;
         logCheatEvent('blur', `ละสายตาจากแท็บทำข้อสอบ หรือสลับโฟกัส (ตรวจพบครั้งที่ ${next})`);
@@ -924,6 +961,7 @@ export default function App() {
       const isFull = !!(document.fullscreenElement || (document as any).webkitFullscreenElement);
       setIsFullscreen(isFull);
       if (!isFull) {
+        setIsCheatLocked(true);
         setCheatAttempts(prev => {
           const next = prev + 1;
           logCheatEvent('fullscreen_exit', `พยายามออกจากโหมดเต็มหน้าจอ (ครั้งที่ ${next})`);
@@ -1590,7 +1628,111 @@ CREATE TABLE cheat_logs (
                 </div>
 
                 {/* Fullscreen Break Warning Enforcer */}
-                {!isFullscreen && (
+                {isCheatLocked ? (
+                  <div className="absolute inset-0 bg-slate-950/98 backdrop-blur-xl z-50 flex flex-col items-center justify-center p-6 text-center overflow-y-auto">
+                    <div className="relative mb-6">
+                      <div className="absolute inset-0 bg-rose-600 rounded-full blur-[30px] animate-pulse opacity-40"></div>
+                      <div className="relative bg-gradient-to-br from-rose-500 to-red-600 p-5 rounded-3xl text-white border-2 border-black shadow-[4px_4px_0_0_#000] flex items-center justify-center">
+                        <Lock className="w-12 h-12" />
+                      </div>
+                    </div>
+
+                    <h2 className="text-2xl md:text-3xl font-black text-rose-500 mb-2 tracking-wide uppercase">🚨 หน้าจอสอบถูกล็อก! (Screen Locked)</h2>
+                    <p className="text-slate-300 max-w-lg text-xs md:text-sm mb-6 leading-relaxed">
+                      ตรวจพบการสลับหน้าจอสอบ ละสายตา หรือออกจากระบบสอบนิรภัย เพื่อความยุติธรรมในการสอบระบบได้ทำการล็อคหน้าจอทันที
+                      <br />
+                      <span className="text-rose-400 font-bold mt-2 block">กรุณาแจ้งคุณครูผู้คุมสอบเดินมาปลดล็อกที่หน้าจอเครื่องนี้</span>
+                    </p>
+
+                    <div className="w-full max-w-sm bg-[#0e1426]/90 border-2 border-slate-800 rounded-3xl p-5 shadow-2xl relative">
+                      <div className="absolute -top-3 left-6 px-3 py-1 bg-rose-600 text-white font-mono text-[9px] font-bold rounded-full border border-black uppercase tracking-wider">
+                        Teacher Verification Only
+                      </div>
+
+                      <div className="space-y-4 mt-2">
+                        <div>
+                          <label className="block text-left text-[11px] font-semibold text-slate-400 mb-1 uppercase tracking-wider pl-1">เลือกคุณครูผู้คุมสอบ</label>
+                          <select 
+                            value={unlockTeacherEmail}
+                            onChange={e => setUnlockTeacherEmail(e.target.value)}
+                            className="w-full input-3d rounded-xl px-3.5 py-2.5 bg-slate-950 border border-slate-800 text-slate-200 focus:outline-none focus:border-rose-500 transition-all text-xs"
+                          >
+                            <option value="">-- เลือกคุณครูผู้สอน --</option>
+                            {teachers.map(t => (
+                              <option key={t.id} value={t.email}>{t.name} ({t.email})</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-left text-[11px] font-semibold text-slate-400 mb-1.5 uppercase tracking-wider pl-1">รหัสผ่านของคุณครู</label>
+                          <input 
+                            type="password" 
+                            placeholder="กรอกรหัสผ่านเพื่อปลดล็อก"
+                            value={unlockTeacherPassword}
+                            onChange={e => setUnlockTeacherPassword(e.target.value)}
+                            className="w-full input-3d rounded-xl px-3.5 py-2.5 placeholder-slate-600 bg-slate-950 border border-slate-800 text-slate-200 focus:outline-none focus:border-rose-500 transition-all text-xs"
+                          />
+                        </div>
+
+                        {unlockError && (
+                          <div className="text-rose-500 text-[11px] font-semibold text-left flex items-center gap-1 bg-rose-500/10 border border-rose-500/25 rounded-lg px-2.5 py-1.5">
+                            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                            <span>{unlockError}</span>
+                          </div>
+                        )}
+
+                        <button 
+                          onClick={async () => {
+                            if (!unlockTeacherEmail) {
+                              setUnlockError('กรุณาเลือกคุณครูผู้คุมสอบ');
+                              return;
+                            }
+                            if (!unlockTeacherPassword) {
+                              setUnlockError('กรุณากรอกรหัสผ่านเพื่อปลดล็อก');
+                              return;
+                            }
+                            setUnlockError('');
+                            setIsUnlocking(true);
+                            try {
+                              const res = await fetch('/api/teachers/login', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ email: unlockTeacherEmail, password: unlockTeacherPassword })
+                              });
+                              if (res.ok) {
+                                setIsCheatLocked(false);
+                                setUnlockTeacherEmail('');
+                                setUnlockTeacherPassword('');
+                                showToast('ปลดล็อกระบบสอบสำเร็จ! สามารถทำข้อสอบต่อได้', 'success');
+                                requestFullscreen();
+                                setIsFullscreen(true);
+                              } else {
+                                const errData = await res.json();
+                                setUnlockError(errData.error || 'รหัสผ่านคุณครูไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง');
+                              }
+                            } catch (err) {
+                              setUnlockError('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์เพื่อปลดล็อกได้');
+                            } finally {
+                              setIsUnlocking(false);
+                            }
+                          }}
+                          disabled={isUnlocking}
+                          className="w-full py-3 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white text-xs font-bold rounded-xl cursor-pointer shadow-lg active:translate-y-0.5 transition-all flex items-center justify-center gap-2"
+                        >
+                          {isUnlocking ? (
+                            <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                          ) : (
+                            <>
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>ยืนยันปลดล็อกหน้าจอ</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : !isFullscreen ? (
                   <div className="absolute inset-0 bg-slate-950/95 z-50 flex flex-col items-center justify-center p-6 text-center">
                     <AlertTriangle className="w-16 h-16 text-rose-500 animate-bounce mb-4" />
                     <h2 className="text-2xl font-black text-rose-400">ออกจากโหมดเต็มหน้าจอต้องห้าม!</h2>
@@ -1608,7 +1750,7 @@ CREATE TABLE cheat_logs (
                       <span>กลับคืนสู่หน้าทำข้อสอบ (Lock Screen)</span>
                     </button>
                   </div>
-                )}
+                ) : null}
 
                 {/* Exam Room Header */}
                 <div className="border-b border-slate-800/80 bg-slate-900 px-6 py-4 flex items-center justify-between">
@@ -1927,6 +2069,14 @@ CREATE TABLE cheat_logs (
                 <Users className="w-4 h-4 text-rose-500" />
                 <span>จัดการรายชื่อนักเรียน</span>
               </button>
+
+              <button 
+                onClick={() => setActiveTab('analysis')}
+                className={`w-full flex items-center gap-3 px-3 py-3 text-xs font-semibold rounded-xl transition-all cursor-pointer ${activeTab === 'analysis' ? 'tab-3d-active text-white' : 'tab-3d-inactive text-slate-300 hover:bg-slate-800'}`}
+              >
+                <Brain className="w-4 h-4 text-rose-500" />
+                <span>วิเคราะห์คุณภาพข้อสอบ (CTT)</span>
+              </button>
             </aside>
 
             {/* Subpages inside dashboard */}
@@ -1954,6 +2104,254 @@ CREATE TABLE cheat_logs (
                       <p className="text-2xl font-black text-rose-500 mt-1 animate-pulse">{cheatLogs.length} ครั้ง</p>
                     </div>
                   </div>
+
+                  {/* === LATEST SCORES & EXAM DURATION DASHBOARD === */}
+                  {(() => {
+                    const uniqueClassrooms = Array.from(new Set(students.map(s => s.class_group).filter(Boolean))).sort();
+                    
+                    const filteredResults = examResults.filter(result => {
+                      const student = students.find(s => s.student_id === result.student_id);
+                      const studentClass = student ? student.class_group : '';
+
+                      // Class filter
+                      if (scoreDashboardClassFilter && studentClass !== scoreDashboardClassFilter) {
+                        return false;
+                      }
+
+                      // Exam filter
+                      if (scoreDashboardExamFilter && result.exam_id !== scoreDashboardExamFilter) {
+                        return false;
+                      }
+
+                      // Search filter (id, name, or exam name)
+                      if (scoreDashboardSearch) {
+                        const q = scoreDashboardSearch.toLowerCase();
+                        const examObj = exams.find(e => e.id === result.exam_id);
+                        const examTitle = examObj ? examObj.title.toLowerCase() : '';
+                        const matchId = result.student_id.toLowerCase().includes(q);
+                        const matchName = result.student_name.toLowerCase().includes(q);
+                        const matchExam = examTitle.includes(q);
+                        if (!matchId && !matchName && !matchExam) {
+                          return false;
+                        }
+                      }
+
+                      return true;
+                    });
+
+                    // Sort by submit_time desc so the latest is on top
+                    const sortedResults = [...filteredResults].sort((a, b) => new Date(b.submit_time).getTime() - new Date(a.submit_time).getTime());
+
+                    // Calculate stats
+                    const totalCompleted = sortedResults.length;
+                    const scoresList = sortedResults.map(r => r.score);
+
+                    const avgScore = scoresList.length > 0 
+                      ? (scoresList.reduce((a, b) => a + b, 0) / scoresList.length).toFixed(1) 
+                      : '0.0';
+
+                    const maxScore = scoresList.length > 0 ? Math.max(...scoresList) : 0;
+                    const minScore = scoresList.length > 0 ? Math.min(...scoresList) : 0;
+
+                    const durations = sortedResults.map(r => {
+                      const start = new Date(r.start_time).getTime();
+                      const end = new Date(r.submit_time).getTime();
+                      return Math.max(0, Math.floor((end - start) / 1000));
+                    });
+
+                    const avgDurationSec = durations.length > 0 
+                      ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) 
+                      : 0;
+                    const avgMin = Math.floor(avgDurationSec / 60);
+                    const avgSec = avgDurationSec % 60;
+                    const avgTimeText = durations.length > 0 ? `${avgMin} นาที ${avgSec} วินาที` : '-';
+
+                    return (
+                      <div className="space-y-6">
+                        <div className="card-3d rounded-3xl p-5 md:p-6 space-y-6">
+                          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+                            <div>
+                              <h3 className="font-bold text-lg text-slate-100 flex items-center gap-2">
+                                <FileSpreadsheet className="w-5 h-5 text-emerald-400" />
+                                <span>แดชบอร์ดสรุปผลคะแนนและเวลาทำข้อสอบล่าสุด</span>
+                              </h3>
+                              <p className="text-xs text-slate-400 mt-1">แสดงผลคะแนนสอบ เวลาที่ทำข้อสอบ และสถานะพฤติกรรมเรียลไทม์ สามารถคัดกรองแยกเป็นรายห้องเรียนได้</p>
+                            </div>
+                            
+                            <button 
+                              onClick={refreshData}
+                              className="px-4 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-xl border border-emerald-500/20 text-xs font-semibold flex items-center gap-2 cursor-pointer self-start md:self-auto transition-all"
+                            >
+                              <RefreshCw className="w-3.5 h-3.5" />
+                              <span>ดึงข้อมูลล่าสุด</span>
+                            </button>
+                          </div>
+
+                          {/* Filters Section */}
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            {/* Classroom Filter */}
+                            <div>
+                              <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider pl-1">เลือกห้องเรียน (Classroom)</label>
+                              <select
+                                value={scoreDashboardClassFilter}
+                                onChange={e => setScoreDashboardClassFilter(e.target.value)}
+                                className="w-full input-3d rounded-xl px-3 py-2.5 bg-slate-950 border border-slate-800 text-slate-200 focus:outline-none focus:border-emerald-500 transition-all text-xs"
+                              >
+                                <option value="">-- แสดงทุกห้องเรียน --</option>
+                                {uniqueClassrooms.map(cls => (
+                                  <option key={cls} value={cls}>{cls}</option>
+                                ))}
+                              </select>
+                            </div>
+
+                            {/* Exam Title Filter */}
+                            <div>
+                              <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider pl-1">เลือกชุดข้อสอบ (Exam)</label>
+                              <select
+                                value={scoreDashboardExamFilter}
+                                onChange={e => setScoreDashboardExamFilter(e.target.value)}
+                                className="w-full input-3d rounded-xl px-3 py-2.5 bg-slate-950 border border-slate-800 text-slate-200 focus:outline-none focus:border-emerald-500 transition-all text-xs"
+                              >
+                                <option value="">-- แสดงทุกชุดข้อสอบ --</option>
+                                {exams.map(exam => (
+                                  <option key={exam.id} value={exam.id}>{exam.title}</option>
+                                ))}
+                              </select>
+                            </div>
+
+                            {/* Text Search Filter */}
+                            <div>
+                              <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider pl-1">ค้นหานักเรียน (Search)</label>
+                              <div className="relative">
+                                <input
+                                  type="text"
+                                  placeholder="ค้นหาชื่อ, รหัสนักเรียน หรือ วิชา..."
+                                  value={scoreDashboardSearch}
+                                  onChange={e => setScoreDashboardSearch(e.target.value)}
+                                  className="w-full input-3d rounded-xl pl-9 pr-4 py-2.5 bg-slate-950 border border-slate-800 text-slate-200 placeholder-slate-600 focus:outline-none focus:border-emerald-500 transition-all text-xs"
+                                />
+                                <Search className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Dynamic Stats Row */}
+                          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 bg-slate-950/40 p-4 border border-slate-900 rounded-2xl">
+                            <div className="space-y-1">
+                              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">จำนวนผู้ส่งสอบ</p>
+                              <p className="text-lg font-black text-emerald-400">{totalCompleted} คน</p>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">คะแนนเฉลี่ย</p>
+                              <p className="text-lg font-black text-slate-200">{avgScore} คะแนน</p>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">คะแนนสูงสุด</p>
+                              <p className="text-lg font-black text-amber-400">{maxScore} คะแนน</p>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">คะแนนต่ำสุด</p>
+                              <p className="text-lg font-black text-rose-400">{minScore} คะแนน</p>
+                            </div>
+                            <div className="col-span-2 md:col-span-1 space-y-1">
+                              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">เวลาทำข้อสอบเฉลี่ย</p>
+                              <p className="text-sm font-bold text-cyan-400 truncate mt-1">{avgTimeText}</p>
+                            </div>
+                          </div>
+
+                          {/* Results Table */}
+                          <div className="overflow-x-auto border border-slate-900 rounded-2xl bg-slate-950/20">
+                            <table className="w-full text-left text-xs text-slate-300">
+                              <thead className="bg-slate-950 text-slate-400 font-bold">
+                                <tr>
+                                  <th className="p-3">รหัสนักเรียน</th>
+                                  <th className="p-3">ชื่อ-นามสกุล</th>
+                                  <th className="p-3 text-center">ห้องเรียน</th>
+                                  <th className="p-3">ชุดข้อสอบ</th>
+                                  <th className="p-3 text-center">คะแนนที่ได้</th>
+                                  <th className="p-3">เวลาที่ใช้สอบ</th>
+                                  <th className="p-3">วันเวลาที่ส่ง</th>
+                                  <th className="p-3 text-center">ความประพฤติ</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-800/40">
+                                {sortedResults.map(r => {
+                                  const student = students.find(s => s.student_id === r.student_id);
+                                  const studentClass = student ? student.class_group : 'ไม่ระบุห้อง';
+                                  const examObj = exams.find(e => e.id === r.exam_id);
+                                  const examTitle = examObj ? examObj.title : 'ชุดข้อสอบที่ถูกลบ';
+                                  
+                                  const rStart = new Date(r.start_time).getTime();
+                                  const rEnd = new Date(r.submit_time).getTime();
+                                  const rDurationSec = Math.max(0, Math.floor((rEnd - rStart) / 1000));
+                                  const rMin = Math.floor(rDurationSec / 60);
+                                  const rSec = rDurationSec % 60;
+                                  
+                                  const hasCheated = cheatLogs.some(cl => cl.student_id === r.student_id && cl.exam_id === r.exam_id);
+                                  const cheatCount = cheatLogs.filter(cl => cl.student_id === r.student_id && cl.exam_id === r.exam_id).length;
+
+                                  const scorePercent = r.total_score > 0 ? (r.score / r.total_score) * 100 : 0;
+                                  let scoreColor = 'text-rose-400';
+                                  if (scorePercent >= 80) scoreColor = 'text-emerald-400';
+                                  else if (scorePercent >= 50) scoreColor = 'text-amber-400';
+
+                                  return (
+                                    <tr key={r.id} className="hover:bg-slate-900/40 transition-colors">
+                                      <td className="p-3 font-mono font-bold text-slate-400">{r.student_id}</td>
+                                      <td className="p-3 font-semibold text-slate-200">{r.student_name}</td>
+                                      <td className="p-3 text-center">
+                                        <span className="px-2 py-0.5 bg-slate-900 text-slate-300 border border-slate-800 rounded text-[10px] font-bold">
+                                          {studentClass}
+                                        </span>
+                                      </td>
+                                      <td className="p-3 text-slate-300 truncate max-w-[150px]" title={examTitle}>
+                                        {examTitle}
+                                      </td>
+                                      <td className="p-3 text-center">
+                                        <div className="flex flex-col items-center">
+                                          <span className={`font-black ${scoreColor}`}>
+                                            {r.score} / {r.total_score}
+                                          </span>
+                                          <span className="text-[9px] text-slate-500 font-mono">({Math.round(scorePercent)}%)</span>
+                                        </div>
+                                      </td>
+                                      <td className="p-3 font-medium text-cyan-300">
+                                        <div className="flex items-center gap-1.5">
+                                          <Clock className="w-3.5 h-3.5 text-slate-500" />
+                                          <span>{rMin} นาที {rSec} วินาที</span>
+                                        </div>
+                                      </td>
+                                      <td className="p-3 text-slate-400 font-mono text-[10px]">
+                                        {new Date(r.submit_time).toLocaleString('th-TH', { hour12: false })}
+                                      </td>
+                                      <td className="p-3 text-center">
+                                        {hasCheated ? (
+                                          <span className="px-2 py-0.5 bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-full font-bold text-[10px]" title={`พบพฤติกรรมสลับหน้าจอหรือออกนอกระบบ ${cheatCount} ครั้ง`}>
+                                            สลับจอ ({cheatCount} ครั้ง)
+                                          </span>
+                                        ) : (
+                                          <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full font-bold text-[10px]">
+                                            ปกติ (ปลอดภัย)
+                                          </span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                                {sortedResults.length === 0 && (
+                                  <tr>
+                                    <td colSpan={8} className="text-center py-12 text-slate-500 text-xs border border-dashed border-slate-900 rounded-b-2xl bg-slate-950/10">
+                                      ไม่พบผลคะแนนสอบที่ตรงตามเงื่อนไขการค้นหา
+                                    </td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* Real-time Incident Logs Monitoring Feed */}
                   <div className="card-3d rounded-3xl p-5 md:p-6 space-y-4">
@@ -2397,6 +2795,649 @@ CREATE TABLE cheat_logs (
                       </div>
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* === SUBPAGE: EXAM ITEM ANALYSIS (CTT) === */}
+              {activeTab === 'analysis' && (
+                <div className="space-y-6">
+                  {/* Filter & Selector Card */}
+                  <div className="card-3d rounded-3xl p-5 md:p-6 space-y-6">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+                      <div>
+                        <h3 className="font-bold text-lg text-slate-100 flex items-center gap-2">
+                          <Brain className="w-5 h-5 text-indigo-400" />
+                          <span>ระบบวิเคราะห์คุณภาพข้อสอบ (Classical Test Theory - CTT)</span>
+                        </h3>
+                        <p className="text-xs text-slate-400 mt-1">
+                          วิเคราะห์ความยากง่าย (p) และอำนาจจำแนก (r) ของข้อสอบแต่ละข้อ เพื่อประเมินความสอดคล้อง คุณภาพของข้อสอบ และวิเคราะห์ตัวลวง (Distractor Analysis) เพื่อปรับปรุงชุดทดสอบให้มีมาตรฐานสูงขึ้น
+                        </p>
+                      </div>
+                      
+                      <button 
+                        onClick={refreshData}
+                        className="px-4 py-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 rounded-xl border border-indigo-500/20 text-xs font-semibold flex items-center gap-2 cursor-pointer self-start md:self-auto transition-all"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>ดึงข้อมูลล่าสุด</span>
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {/* Select Exam */}
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider pl-1">เลือกชุดข้อสอบที่จะวิเคราะห์</label>
+                        <select
+                          value={analysisSelectedExamId}
+                          onChange={e => {
+                            setAnalysisSelectedExamId(e.target.value);
+                            setAnalysisExpandedQuestionId(null);
+                          }}
+                          className="w-full input-3d rounded-xl px-3 py-2.5 bg-slate-950 border border-slate-800 text-slate-200 focus:outline-none focus:border-indigo-500 transition-all text-xs"
+                        >
+                          <option value="">-- โปรดเลือกชุดข้อสอบ --</option>
+                          {exams.map(exam => {
+                            const subj = subjects.find(s => s.id === exam.subject_id);
+                            const subjName = subj ? `[${subj.code}] ${subj.name}` : 'ไม่ระบุวิชา';
+                            return (
+                              <option key={exam.id} value={exam.id}>{subjName} - {exam.title}</option>
+                            );
+                          })}
+                        </select>
+                      </div>
+
+                      {/* Select Classroom */}
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider pl-1">คัดกรองตามห้องเรียน (Classroom)</label>
+                        <select
+                          value={analysisSelectedClass}
+                          onChange={e => {
+                            setAnalysisSelectedClass(e.target.value);
+                            setAnalysisExpandedQuestionId(null);
+                          }}
+                          disabled={!analysisSelectedExamId}
+                          className="w-full input-3d rounded-xl px-3 py-2.5 bg-slate-950 border border-slate-800 text-slate-200 focus:outline-none focus:border-indigo-500 transition-all text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <option value="">-- แสดงทุกห้องเรียน --</option>
+                          {Array.from(new Set(students.map(s => s.class_group).filter(Boolean))).sort().map(cls => (
+                            <option key={cls} value={cls}>{cls}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Loading or Empty State */}
+                  {!analysisSelectedExamId ? (
+                    <div className="card-3d rounded-3xl p-12 text-center flex flex-col items-center justify-center space-y-3">
+                      <div className="p-4 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-3xl">
+                        <Brain className="w-8 h-8 animate-bounce" />
+                      </div>
+                      <h4 className="text-sm font-bold text-slate-200">ยังไม่ได้เลือกชุดข้อสอบ</h4>
+                      <p className="text-xs text-slate-400 max-w-sm leading-relaxed">
+                        โปรดเลือกชุดข้อสอบที่คุณครูต้องการทำการประเมินค่าคุณภาพเครื่องมือวัดผลและสถิติวัดแนะเพื่อพิจารณาโครงสร้างความคุ้มค่าด้านล่าง
+                      </p>
+                    </div>
+                  ) : isAnalysisLoading ? (
+                    <div className="card-3d rounded-3xl p-12 text-center flex flex-col items-center justify-center space-y-3">
+                      <RefreshCw className="w-8 h-8 text-indigo-400 animate-spin" />
+                      <p className="text-xs text-slate-400">กำลังดาวน์โหลดข้อมูลคำถามและผลคะแนนของวิชาสอบ...</p>
+                    </div>
+                  ) : (() => {
+                    const matchedResults = examResults.filter(r => {
+                      if (r.exam_id !== analysisSelectedExamId) return false;
+                      if (r.status !== 'completed') return false;
+                      if (analysisSelectedClass) {
+                        const s = students.find(stud => stud.student_id === r.student_id);
+                        if (!s || s.class_group !== analysisSelectedClass) return false;
+                      }
+                      return true;
+                    });
+
+                    const totalTakers = matchedResults.length;
+
+                    if (totalTakers === 0) {
+                      return (
+                        <div className="card-3d rounded-3xl p-12 text-center flex flex-col items-center justify-center space-y-3">
+                          <div className="p-4 bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-3xl">
+                            <AlertTriangle className="w-8 h-8" />
+                          </div>
+                          <h4 className="text-sm font-bold text-rose-400">ยังไม่มีข้อมูลนักเรียนส่งข้อสอบ</h4>
+                          <p className="text-xs text-slate-400 max-w-md leading-relaxed">
+                            ระบบไม่พบผลการสอบของนักเรียนชั้น <span className="text-rose-400 font-bold">{analysisSelectedClass || 'ทุกห้องเรียน'}</span> สำหรับแบบทดสอบชุดนี้ เพื่อดำเนินการวิเคราะห์ความยากและอำนาจจำแนกได้อย่างถูกต้อง จำเป็นต้องมีข้อมูลผู้สอบส่งคะแนนอย่างน้อย 1 คน
+                          </p>
+                        </div>
+                      );
+                    }
+
+                    // Compute Classical Test Theory statistics
+                    const itemsAnalysis = analysisQuestions.map((q, idx) => {
+                      const qId = q.id || '';
+                      const correctOptionIndex = q.correct_index;
+                      const optionCounts = Array(q.options.length).fill(0);
+                      let correctCount = 0;
+
+                      // High and Low group splits for Discrimination Index (r)
+                      const sortedByScore = [...matchedResults].sort((a, b) => b.score - a.score);
+                      const half = Math.floor(sortedByScore.length / 2);
+
+                      let rValue = 0;
+                      let isDiscrimCalculated = false;
+                      let highCorrect = 0;
+                      let lowCorrect = 0;
+
+                      let highOptionCounts = Array(q.options.length).fill(0);
+                      let lowOptionCounts = Array(q.options.length).fill(0);
+
+                      matchedResults.forEach(res => {
+                        let ansObj: Record<string, number> = {};
+                        try {
+                          ansObj = typeof res.answers === 'string' ? JSON.parse(res.answers) : res.answers;
+                        } catch (e) {}
+                        const chosenIndex = ansObj[qId];
+                        if (chosenIndex !== undefined && chosenIndex >= 0 && chosenIndex < q.options.length) {
+                          optionCounts[chosenIndex]++;
+                          if (chosenIndex === correctOptionIndex) {
+                            correctCount++;
+                          }
+                        }
+                      });
+
+                      if (half >= 1) {
+                        const highGroup = sortedByScore.slice(0, half);
+                        const lowGroup = sortedByScore.slice(sortedByScore.length - half);
+
+                        highGroup.forEach(res => {
+                          let ansObj: Record<string, number> = {};
+                          try {
+                            ansObj = typeof res.answers === 'string' ? JSON.parse(res.answers) : res.answers;
+                          } catch (e) {}
+                          const chosenIndex = ansObj[qId];
+                          if (chosenIndex !== undefined && chosenIndex >= 0 && chosenIndex < q.options.length) {
+                            highOptionCounts[chosenIndex]++;
+                            if (chosenIndex === correctOptionIndex) {
+                              highCorrect++;
+                            }
+                          }
+                        });
+
+                        lowGroup.forEach(res => {
+                          let ansObj: Record<string, number> = {};
+                          try {
+                            ansObj = typeof res.answers === 'string' ? JSON.parse(res.answers) : res.answers;
+                          } catch (e) {}
+                          const chosenIndex = ansObj[qId];
+                          if (chosenIndex !== undefined && chosenIndex >= 0 && chosenIndex < q.options.length) {
+                            lowOptionCounts[chosenIndex]++;
+                            if (chosenIndex === correctOptionIndex) {
+                              lowCorrect++;
+                            }
+                          }
+                        });
+
+                        const pH = highCorrect / half;
+                        const pL = lowCorrect / half;
+                        rValue = Number((pH - pL).toFixed(2));
+                        isDiscrimCalculated = true;
+                      }
+
+                      const p = Number((correctCount / totalTakers).toFixed(2));
+
+                      return {
+                        question: q,
+                        itemNumber: idx + 1,
+                        p,
+                        r: rValue,
+                        isDiscrimCalculated,
+                        correctCount,
+                        optionCounts,
+                        highOptionCounts,
+                        lowOptionCounts,
+                        highGroupSize: half,
+                        lowGroupSize: half,
+                      };
+                    });
+
+                    // Summary statistics
+                    const totalQuestions = itemsAnalysis.length;
+                    const avgDifficulty = totalQuestions > 0 
+                      ? Number((itemsAnalysis.reduce((sum, item) => sum + item.p, 0) / totalQuestions).toFixed(2))
+                      : 0;
+
+                    const validDiscrims = itemsAnalysis.filter(i => i.isDiscrimCalculated);
+                    const avgDiscrim = validDiscrims.length > 0
+                      ? Number((validDiscrims.reduce((sum, item) => sum + item.r, 0) / validDiscrims.length).toFixed(2))
+                      : 0;
+
+                    // Classify test overall difficulty and discrimination
+                    let overallDifficultyText = 'ยากพอเหมาะ';
+                    let overallDiffColor = 'text-cyan-400';
+                    if (avgDifficulty >= 0.8) {
+                      overallDifficultyText = 'ง่ายเกินไป';
+                      overallDiffColor = 'text-emerald-400';
+                    } else if (avgDifficulty >= 0.6) {
+                      overallDifficultyText = 'ค่อนข้างง่าย';
+                      overallDiffColor = 'text-emerald-400';
+                    } else if (avgDifficulty >= 0.2 && avgDifficulty < 0.3) {
+                      overallDifficultyText = 'ค่อนข้างยาก';
+                      overallDiffColor = 'text-amber-500';
+                    } else if (avgDifficulty < 0.2) {
+                      overallDifficultyText = 'ยากเกินไป';
+                      overallDiffColor = 'text-rose-500';
+                    }
+
+                    let overallDiscrimText = 'จำแนกต่ำ (ควรปรับปรุง)';
+                    let overallDiscrimColor = 'text-rose-400';
+                    if (avgDiscrim >= 0.4) {
+                      overallDiscrimText = 'ดีเยี่ยม (จำแนกสูง)';
+                      overallDiscrimColor = 'text-emerald-400';
+                    } else if (avgDiscrim >= 0.3) {
+                      overallDiscrimText = 'ดี';
+                      overallDiscrimColor = 'text-emerald-400';
+                    } else if (avgDiscrim >= 0.2) {
+                      overallDiscrimText = 'พอใช้';
+                      overallDiscrimColor = 'text-amber-500';
+                    }
+
+                    // Group counts for quality segments
+                    const goodItems = itemsAnalysis.filter(item => item.p >= 0.2 && item.p <= 0.8 && item.r >= 0.2);
+                    const extremeDiffItems = itemsAnalysis.filter(item => item.p > 0.8 || item.p < 0.2);
+                    const poorDiscrimItems = itemsAnalysis.filter(item => item.r < 0.2);
+                    const flawedItems = itemsAnalysis.filter(item => item.r < 0);
+
+                    // Filtered analysis based on the active question filter
+                    const filteredItemsAnalysis = itemsAnalysis.filter(item => {
+                      if (analysisQuestionFilter === 'all') return true;
+                      if (analysisQuestionFilter === 'good') return item.p >= 0.2 && item.p <= 0.8 && item.r >= 0.2;
+                      if (analysisQuestionFilter === 'poor') return item.r < 0.2;
+                      if (analysisQuestionFilter === 'flawed') return item.r < 0;
+                      return true;
+                    });
+
+                    return (
+                      <div className="space-y-6">
+                        {/* Overall Test Stats Grid */}
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                          <div className="card-3d rounded-2xl p-4 bg-slate-950/40 border border-slate-900 flex flex-col justify-between">
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">จำนวนผู้สอบทั้งหมด</p>
+                            <p className="text-2xl font-black text-slate-200 mt-1">{totalTakers} คน</p>
+                            <span className="text-[9px] text-slate-500 mt-1">*กลุ่มประชากรชั้น {analysisSelectedClass || 'ทุกห้องเรียน'}</span>
+                          </div>
+
+                          <div className="card-3d rounded-2xl p-4 bg-slate-950/40 border border-slate-900 flex flex-col justify-between">
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">จำนวนข้อสอบวิเคราะห์</p>
+                            <p className="text-2xl font-black text-slate-200 mt-1">{totalQuestions} ข้อ</p>
+                            <span className="text-[9px] text-indigo-400 mt-1 font-bold">ความเชื่อมั่นสูงตามเกณฑ์ CTT</span>
+                          </div>
+
+                          <div className="card-3d rounded-2xl p-4 bg-slate-950/40 border border-slate-900 flex flex-col justify-between">
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">ความยากเฉลี่ย (Mean p)</p>
+                            <div className="text-2xl font-black text-slate-100 mt-1 flex items-baseline gap-1.5 flex-wrap">
+                              <span>{avgDifficulty}</span>
+                              <span className={`text-xs font-bold ${overallDiffColor}`}>({overallDifficultyText})</span>
+                            </div>
+                            <span className="text-[9px] text-slate-500 mt-1">*ช่วงดีที่สุดคือ 0.20 - 0.80</span>
+                          </div>
+
+                          <div className="card-3d rounded-2xl p-4 bg-slate-950/40 border border-slate-900 flex flex-col justify-between">
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">อำนาจจำแนกเฉลี่ย (Mean r)</p>
+                            <div className="text-2xl font-black text-slate-100 mt-1 flex items-baseline gap-1.5 flex-wrap">
+                              <span>{avgDiscrim}</span>
+                              <span className={`text-xs font-bold ${overallDiscrimColor}`}>({overallDiscrimText})</span>
+                            </div>
+                            <span className="text-[9px] text-slate-500 mt-1">*ค่าสูงกว่า 0.20 คือผ่านเกณฑ์</span>
+                          </div>
+                        </div>
+
+                        {/* Bento analysis distribution */}
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                          <div className="card-3d rounded-2xl p-4 border border-emerald-500/10 bg-emerald-500/5 space-y-2">
+                            <p className="text-xs font-bold text-emerald-400 flex items-center justify-between">
+                              <span>ข้อสอบผ่านเกณฑ์ (คุณภาพสูง)</span>
+                              <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 rounded-full text-[10px] font-black">{goodItems.length} ข้อ</span>
+                            </p>
+                            <p className="text-[11px] text-slate-400">ข้อสอบมีความยากพอเหมาะ (p 0.2-0.8) และมีอำนาจจำแนกที่ดีเยี่ยม สามารถเก็บบันทึกไว้ในคลังข้อสอบมาตรฐานได้เลย</p>
+                            {goodItems.length > 0 && (
+                              <div className="text-[10px] font-mono text-emerald-500 bg-emerald-950/30 p-2 rounded-lg truncate" title={goodItems.map(i => `ข้อ ${i.itemNumber}`).join(', ')}>
+                                <b>เลขข้อ:</b> {goodItems.map(i => i.itemNumber).join(', ')}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="card-3d rounded-2xl p-4 border border-indigo-500/10 bg-indigo-500/5 space-y-2">
+                            <p className="text-xs font-bold text-indigo-400 flex items-center justify-between">
+                              <span>ความยากอยู่นอกเกณฑ์ที่ดี</span>
+                              <span className="px-2 py-0.5 bg-indigo-500/10 text-indigo-400 rounded-full text-[10px] font-black">{extremeDiffItems.length} ข้อ</span>
+                            </p>
+                            <p className="text-[11px] text-slate-400">ข้อสอบที่ยากมากเกินไป (p &lt; 0.2) หรือว่าง่ายมากเกินไป (p &gt; 0.8) ซึ่งส่งผลให้การประเมินทักษะของผู้เรียนมีความคลาดเคลื่อน</p>
+                            {extremeDiffItems.length > 0 && (
+                              <div className="text-[10px] font-mono text-indigo-400 bg-indigo-950/30 p-2 rounded-lg truncate" title={extremeDiffItems.map(i => `ข้อ ${i.itemNumber}`).join(', ')}>
+                                <b>เลขข้อ:</b> {extremeDiffItems.map(i => i.itemNumber).join(', ')}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="card-3d rounded-2xl p-4 border border-amber-500/10 bg-amber-500/5 space-y-2">
+                            <p className="text-xs font-bold text-amber-400 flex items-center justify-between">
+                              <span>อำนาจจำแนกต่ำ (r &lt; 0.20)</span>
+                              <span className="px-2 py-0.5 bg-amber-500/10 text-amber-400 rounded-full text-[10px] font-black">{poorDiscrimItems.length} ข้อ</span>
+                            </p>
+                            <p className="text-[11px] text-slate-400">ข้อสอบที่ไม่สามารถแบ่งแยกระหว่างผู้เรียนที่เข้าใจเนื้อหา (กลุ่มเก่ง) กับผู้เรียนที่ยังต้องการการช่วยเหลือ (กลุ่มอ่อน) ได้ดี</p>
+                            {poorDiscrimItems.length > 0 && (
+                              <div className="text-[10px] font-mono text-amber-500 bg-amber-950/30 p-2 rounded-lg truncate" title={poorDiscrimItems.map(i => `ข้อ ${i.itemNumber}`).join(', ')}>
+                                <b>เลขข้อ:</b> {poorDiscrimItems.map(i => i.itemNumber).join(', ')}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="card-3d rounded-2xl p-4 border border-rose-500/10 bg-rose-500/5 space-y-2">
+                            <p className="text-xs font-bold text-rose-400 flex items-center justify-between">
+                              <span>จำแนกกลับด้าน/เฉลยผิดปกติ</span>
+                              <span className="px-2 py-0.5 bg-rose-500/10 text-rose-400 rounded-full text-[10px] font-black">{flawedItems.length} ข้อ</span>
+                            </p>
+                            <p className="text-[11px] text-slate-400">วิกฤต: เด็กกลุ่มอ่อนตอบถูกมากกว่ากลุ่มเก่งอย่างมีนัยสำคัญ คุณครูควรตรวจสอบความถูกต้องของการบันทึกเฉลยโดยด่วน!</p>
+                            {flawedItems.length > 0 && (
+                              <div className="text-[10px] font-mono text-rose-400 bg-rose-950/30 p-2 rounded-lg truncate shadow-inner" title={flawedItems.map(i => `ข้อ ${i.itemNumber}`).join(', ')}>
+                                <b>เลขข้อ:</b> {flawedItems.map(i => i.itemNumber).join(', ')}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Interactive List controls */}
+                        <div className="card-3d rounded-3xl p-5 md:p-6 space-y-4">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                            <div>
+                              <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                                <Sliders className="w-4 h-4 text-slate-400" />
+                                <span>รายการผลวิเคราะห์รายข้อ และสถิติตัวลวง</span>
+                              </h4>
+                              <p className="text-[11px] text-slate-400 mt-1">คลิกที่แถวคำถามเพื่อขยายดูการวิเคราะห์การตอบตัวเลือกรวมถึงการวิเคราะห์ดัชนีตัวลวงรายกลุ่มอย่างละเอียด</p>
+                            </div>
+
+                            {/* Filter tabs */}
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <button
+                                onClick={() => setAnalysisQuestionFilter('all')}
+                                className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${analysisQuestionFilter === 'all' ? 'bg-slate-100 text-slate-900 border-white font-extrabold shadow-sm' : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'}`}
+                              >
+                                ทั้งหมด ({totalQuestions})
+                              </button>
+                              <button
+                                onClick={() => setAnalysisQuestionFilter('good')}
+                                className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${analysisQuestionFilter === 'good' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30 font-extrabold shadow-sm' : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'}`}
+                              >
+                                ผ่านเกณฑ์ ({goodItems.length})
+                              </button>
+                              <button
+                                onClick={() => setAnalysisQuestionFilter('poor')}
+                                className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${analysisQuestionFilter === 'poor' ? 'bg-amber-500/20 text-amber-300 border-amber-500/30 font-extrabold shadow-sm' : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'}`}
+                              >
+                                จำแนกต่ำ ({poorDiscrimItems.length})
+                              </button>
+                              <button
+                                onClick={() => setAnalysisQuestionFilter('flawed')}
+                                className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${analysisQuestionFilter === 'flawed' ? 'bg-rose-500/20 text-rose-300 border-rose-500/30 font-extrabold shadow-sm' : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'}`}
+                              >
+                                จำแนกติดลบ ({flawedItems.length})
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Analysis Table */}
+                          <div className="overflow-x-auto border border-slate-900 rounded-2xl bg-slate-950/20">
+                            <table className="w-full text-left text-xs text-slate-300">
+                              <thead className="bg-slate-950 text-slate-400 font-bold">
+                                <tr>
+                                  <th className="p-3 text-center w-12">ข้อ</th>
+                                  <th className="p-3">โจทย์คำถาม</th>
+                                  <th className="p-3 text-center w-28">ความยาก (p)</th>
+                                  <th className="p-3 text-center w-32">อำนาจจำแนก (r)</th>
+                                  <th className="p-3 text-center w-40">ประเมินคุณภาพข้อสอบ</th>
+                                  <th className="p-3 text-center w-24">สถิติตัวลวง</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-800/40">
+                                {filteredItemsAnalysis.map(item => {
+                                  const isExpanded = analysisExpandedQuestionId === item.question.id;
+                                  
+                                  // Evaluation label calculation
+                                  let verdict = 'เก็บไว้ใช้งานได้ดี';
+                                  let verdictColor = 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
+                                  if (item.r < 0) {
+                                    verdict = 'จำแนกติดลบ (เช็คเฉลย!)';
+                                    verdictColor = 'bg-rose-500/15 text-rose-400 border-rose-500/20 animate-pulse';
+                                  } else if (item.r < 0.2) {
+                                    verdict = 'จำแนกต่ำ (ควรปรับปรุง)';
+                                    verdictColor = 'bg-amber-500/10 text-amber-400 border-amber-500/20';
+                                  } else if (item.p > 0.85) {
+                                    verdict = 'ง่ายมาก (พิจารณาตัวลวง)';
+                                    verdictColor = 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20';
+                                  } else if (item.p < 0.15) {
+                                    verdict = 'ยากมาก (ควรให้ความรู้เสริม)';
+                                    verdictColor = 'bg-blue-500/10 text-blue-400 border-blue-500/20';
+                                  }
+
+                                  // Color ranges for p
+                                  let pColor = 'text-cyan-400 font-bold';
+                                  let pBarColor = 'bg-cyan-500';
+                                  if (item.p >= 0.8) {
+                                    pColor = 'text-emerald-400 font-bold';
+                                    pBarColor = 'bg-emerald-500';
+                                  } else if (item.p < 0.2) {
+                                    pColor = 'text-rose-400 font-bold';
+                                    pBarColor = 'bg-rose-500';
+                                  } else if (item.p < 0.3) {
+                                    pColor = 'text-amber-500 font-bold';
+                                    pBarColor = 'bg-amber-500';
+                                  }
+
+                                  // Color ranges for r
+                                  let rColor = 'text-emerald-400 font-bold';
+                                  if (item.r < 0) {
+                                    rColor = 'text-rose-500 font-black';
+                                  } else if (item.r < 0.2) {
+                                    rColor = 'text-rose-400 font-bold';
+                                  } else if (item.r < 0.3) {
+                                    rColor = 'text-amber-500 font-bold';
+                                  }
+
+                                  return (
+                                    <React.Fragment key={item.question.id}>
+                                      {/* Main row */}
+                                      <tr 
+                                        onClick={() => setAnalysisExpandedQuestionId(isExpanded ? null : (item.question.id || null))}
+                                        className={`hover:bg-slate-900/60 transition-colors cursor-pointer ${isExpanded ? 'bg-slate-900/40' : ''}`}
+                                      >
+                                        <td className="p-3 text-center font-mono font-bold text-slate-400">
+                                          {item.itemNumber}
+                                        </td>
+                                        <td className="p-3">
+                                          <div className="font-semibold text-slate-200 line-clamp-1 text-xs" title={item.question.question_text}>
+                                            {item.question.question_text}
+                                          </div>
+                                          <div className="flex gap-2 items-center text-[10px] text-slate-500 mt-1">
+                                            <span>มีตัวเลือก {item.question.options.length} ตัวเลือก</span>
+                                            <span>•</span>
+                                            <span>นัยสถิติเฉลยตัวเลือกที่ {['ก', 'ข', 'ค', 'ง', 'จ'][item.question.correct_index] || item.question.correct_index + 1}</span>
+                                          </div>
+                                        </td>
+                                        <td className="p-3 text-center">
+                                          <div className="flex flex-col items-center">
+                                            <span className={pColor}>{item.p.toFixed(2)}</span>
+                                            {/* Micro bar */}
+                                            <div className="w-16 h-1 bg-slate-900 rounded-full mt-1 overflow-hidden">
+                                              <div className={`h-full ${pBarColor}`} style={{ width: `${item.p * 100}%` }}></div>
+                                            </div>
+                                            <span className="text-[8px] text-slate-500 mt-0.5">ตอบถูก {item.correctCount}/{totalTakers} คน</span>
+                                          </div>
+                                        </td>
+                                        <td className="p-3 text-center">
+                                          <div className="flex flex-col items-center">
+                                            {item.isDiscrimCalculated ? (
+                                              <>
+                                                <span className={rColor}>{item.r >= 0 ? `+${item.r.toFixed(2)}` : item.r.toFixed(2)}</span>
+                                                <span className="text-[8px] text-slate-500">กลุ่มสูง vs กลุ่มต่ำ</span>
+                                              </>
+                                            ) : (
+                                              <span className="text-slate-500 text-[10px] italic">ต้องการผู้สอบ &ge; 2 คน</span>
+                                            )}
+                                          </div>
+                                        </td>
+                                        <td className="p-3 text-center">
+                                          <span className={`px-2 py-1 rounded-full text-[10px] font-bold border ${verdictColor}`}>
+                                            {verdict}
+                                          </span>
+                                        </td>
+                                        <td className="p-3 text-center">
+                                          <span className="text-[10px] text-indigo-400 hover:text-indigo-300 font-semibold underline">
+                                            {isExpanded ? 'ปิดสถิติ' : 'ดูสถิติคำตอบ'}
+                                          </span>
+                                        </td>
+                                      </tr>
+
+                                      {/* Expanded Distractor Analysis Accordion */}
+                                      {isExpanded && (
+                                        <tr>
+                                          <td colSpan={6} className="bg-slate-950/60 p-5 border-t border-b border-slate-900">
+                                            <div className="space-y-4 max-w-4xl mx-auto text-left">
+                                              {/* Header details */}
+                                              <div className="flex flex-col sm:flex-row justify-between gap-3 border-b border-slate-800 pb-3">
+                                                <div>
+                                                  <h5 className="font-bold text-xs text-indigo-400 uppercase tracking-wider">โจทย์คำถามแบบเต็มข้อ {item.itemNumber}</h5>
+                                                  <p className="text-sm font-semibold text-slate-100 mt-1">{item.question.question_text}</p>
+                                                </div>
+                                                <div className="text-right shrink-0">
+                                                  <span className="text-[10px] text-slate-400 font-semibold">คะแนนดิบ: {item.question.points} คะแนน</span>
+                                                  {item.question.explanation && (
+                                                    <p className="text-[10px] text-emerald-400 font-medium mt-1">เฉลย: {item.question.explanation}</p>
+                                                  )}
+                                                </div>
+                                              </div>
+
+                                              {/* Options & Distractor breakdown */}
+                                              <div className="space-y-3">
+                                                <h6 className="font-bold text-[10px] text-slate-400 uppercase tracking-widest pl-1">ผลวิเคราะห์การกระจายสถิติคำตอบรายกลุ่ม (Distractor Response Graph)</h6>
+                                                
+                                                <div className="grid grid-cols-1 gap-3">
+                                                  {item.question.options.map((option, optIdx) => {
+                                                    const isCorrect = item.question.correct_index === optIdx;
+                                                    const choiceCount = item.optionCounts[optIdx] || 0;
+                                                    const pct = totalTakers > 0 ? Math.round((choiceCount / totalTakers) * 100) : 0;
+                                                    
+                                                    // High & Low Group details
+                                                    const highChoice = item.highOptionCounts[optIdx] || 0;
+                                                    const lowChoice = item.lowOptionCounts[optIdx] || 0;
+                                                    const highPct = item.highGroupSize > 0 ? Math.round((highChoice / item.highGroupSize) * 100) : 0;
+                                                    const lowPct = item.lowGroupSize > 0 ? Math.round((lowChoice / item.lowGroupSize) * 100) : 0;
+
+                                                    // Recommendation for this specific choice
+                                                    let choiceRole = "ตัวเลือกเฉลยที่ถูกต้อง";
+                                                    let choiceRoleColor = "text-emerald-400 font-bold bg-emerald-500/10 border-emerald-500/20";
+                                                    let advice = "";
+
+                                                    if (!isCorrect) {
+                                                      choiceRole = "ตัวลวง (Distractor)";
+                                                      choiceRoleColor = "text-slate-400 bg-slate-900 border-slate-800";
+                                                      if (choiceCount === 0) {
+                                                        advice = "⚠️ ตัวลวงนี้ไม่มีนักเรียนเลือกเลย ควรปรับเปลี่ยนโจทย์หรือตัวเลือกข้อนี้ให้มีเหตุผลเชิงวิทยาศาสตร์ที่น่าดึงดูดมากขึ้น";
+                                                      } else if (highChoice > lowChoice) {
+                                                        advice = "⚠️ ตัวลวงล่อใจเด็กกลุ่มเก่ง (กลุ่มสูงเลือกมากกว่ากลุ่มต่ำ) ตัวเลือกนี้อาจมีความสับสนหรือคลุมเครือเชิงภาษา";
+                                                      } else {
+                                                        advice = "✓ ตัวลวงคุณภาพผ่านเกณฑ์ ดึงดูดผู้ตอบกลุ่มอ่อนได้ดีตามหลักจิตวิทยาการสอบ";
+                                                      }
+                                                    } else {
+                                                      if (lowChoice > highChoice) {
+                                                        advice = "❌ วิกฤต: อัตราการเลือกข้อนี้ต่ำลงในกลุ่มเด็กเก่ง ควรทบทวนความถูกต้องของคีย์เฉลยอย่างถี่ถ้วน";
+                                                      } else {
+                                                        advice = "✓ คีย์เฉลยทิศทางถูกต้อง คัดแยกกลุ่มเด็กเก่งและอ่อนได้อย่างมีเสถียรภาพ";
+                                                      }
+                                                    }
+
+                                                    return (
+                                                      <div 
+                                                        key={optIdx}
+                                                        className={`p-3 rounded-2xl border ${isCorrect ? 'bg-emerald-950/10 border-emerald-500/20' : 'bg-slate-950/40 border-slate-900'} space-y-2`}
+                                                      >
+                                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                                          <div className="flex items-center gap-2">
+                                                            <span className={`w-6 h-6 rounded-lg text-xs font-bold flex items-center justify-center shrink-0 ${isCorrect ? 'bg-emerald-500 text-slate-950' : 'bg-slate-900 text-slate-300 border border-slate-800'}`}>
+                                                              {['ก', 'ข', 'ค', 'ง', 'จ'][optIdx] || optIdx + 1}
+                                                            </span>
+                                                            <span className="text-xs text-slate-200 font-medium">{option}</span>
+                                                          </div>
+                                                          <span className={`px-2 py-0.5 rounded text-[9px] font-bold border uppercase tracking-wider self-start sm:self-center ${choiceRoleColor}`}>
+                                                            {choiceRole}
+                                                          </span>
+                                                        </div>
+
+                                                        {/* Bars */}
+                                                        <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
+                                                          {/* Total percent bar */}
+                                                          <div className="sm:col-span-5 space-y-1">
+                                                            <div className="flex justify-between text-[10px] text-slate-400">
+                                                              <span>อัตราตอบของนักเรียนทุกคน:</span>
+                                                              <span className="font-bold">{choiceCount} คน ({pct}%)</span>
+                                                            </div>
+                                                            <div className="w-full h-1.5 bg-slate-900 rounded-full overflow-hidden">
+                                                              <div className={`h-full ${isCorrect ? 'bg-emerald-500' : 'bg-slate-700'}`} style={{ width: `${pct}%` }}></div>
+                                                            </div>
+                                                          </div>
+
+                                                          {/* Group high-low compare bars */}
+                                                          <div className="sm:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                            <div className="space-y-1">
+                                                              <div className="flex justify-between text-[9px] text-slate-400">
+                                                                <span className="text-cyan-400 font-bold">กลุ่มเรียนเก่ง (High):</span>
+                                                                <span className="font-bold text-cyan-400">{highChoice} คน ({highPct}%)</span>
+                                                              </div>
+                                                              <div className="w-full h-1 bg-slate-900 rounded-full overflow-hidden">
+                                                                <div className="h-full bg-cyan-400" style={{ width: `${highPct}%` }}></div>
+                                                              </div>
+                                                            </div>
+                                                            <div className="space-y-1">
+                                                              <div className="flex justify-between text-[9px] text-slate-400">
+                                                                <span className="text-amber-400 font-bold">กลุ่มเรียนอ่อน (Low):</span>
+                                                                <span className="font-bold text-amber-400">{lowChoice} คน ({lowPct}%)</span>
+                                                              </div>
+                                                              <div className="w-full h-1 bg-slate-900 rounded-full overflow-hidden">
+                                                                <div className="h-full bg-amber-400" style={{ width: `${lowPct}%` }}></div>
+                                                              </div>
+                                                            </div>
+                                                          </div>
+                                                        </div>
+
+                                                        {/* Recommendation */}
+                                                        <div className="text-[10px] bg-slate-950 p-2 border border-slate-900 rounded-lg text-slate-400 font-semibold leading-relaxed">
+                                                          {advice}
+                                                        </div>
+                                                      </div>
+                                                    );
+                                                  })}
+                                                </div>
+                                              </div>
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      )}
+                                    </React.Fragment>
+                                  );
+                                })}
+
+                                {filteredItemsAnalysis.length === 0 && (
+                                  <tr>
+                                    <td colSpan={6} className="text-center py-12 text-slate-500 text-xs border border-dashed border-slate-900 rounded-b-2xl bg-slate-950/10">
+                                      ไม่พบรายการผลวิเคราะห์ข้อสอบที่ตรงตามเงื่อนไขการกรอง
+                                    </td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 
