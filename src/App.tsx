@@ -4297,7 +4297,7 @@ CREATE TABLE cheat_logs (
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pt-4">
                       {/* Export Card */}
                       <div className="bg-slate-950/60 border border-slate-800 rounded-2xl p-6 space-y-4 flex flex-col justify-between">
                         <div className="space-y-2">
@@ -4344,6 +4344,43 @@ CREATE TABLE cheat_logs (
                           ) : (
                             <p className="text-xs font-semibold text-slate-300">คลิกที่นี่เพื่อเลือกไฟล์สำรองข้อมูล (.json) เพื่อนำคืน</p>
                           )}
+                        </div>
+                      </div>
+
+                      {/* Supabase Cloud Setup & SQL Copy Card */}
+                      <div className="bg-amber-950/30 border border-amber-600/40 rounded-2xl p-6 space-y-4 flex flex-col justify-between">
+                        <div className="space-y-2">
+                          <h4 className="font-bold text-sm text-amber-400 flex items-center gap-2">
+                            <Cloud className="w-4 h-4" />
+                            <span>3. ตั้งค่า Cloud Supabase (SQL Setup)</span>
+                          </h4>
+                          <p className="text-xs text-slate-300 leading-relaxed">
+                            หากโปรเจกต์ Supabase บนคลาวด์ของคุณยังไม่ได้สร้างตาราง ให้คัดลอกคำสั่ง SQL ไปวางใน Supabase SQL Editor แล้วกด Run ได้เลย
+                          </p>
+                        </div>
+
+                        <div className="space-y-2">
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(SUPABASE_SETUP_SQL);
+                              showToast('คัดลอกคำสั่ง SQL สำหรับ Supabase เรียบร้อยแล้ว! นำไปวางใน Supabase SQL Editor แล้วกด Run ได้เลย', 'success');
+                            }}
+                            className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-amber-500/20 transition-all active:scale-95"
+                          >
+                            <Download className="w-4 h-4" />
+                            <span>📋 คัดลอกคำสั่ง SQL สร้างตารางลง Supabase</span>
+                          </button>
+
+                          <button 
+                            onClick={() => {
+                              handleTestDbConnection();
+                              setShowDbStatusModal(true);
+                            }}
+                            className="w-full py-2 bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-slate-700 font-bold text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-all"
+                          >
+                            <Database className="w-3.5 h-3.5" />
+                            <span>ดูสถานะ และ ซิงค์ Local ขึ้น Cloud</span>
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -6076,46 +6113,44 @@ CREATE TABLE cheat_logs (
               </div>
             </div>
 
-            {/* Supabase Table Missing Warning & SQL Copy Helper */}
-            {(dbStatus.tableMissing || dbStatus.supabaseError?.includes('PGRST205') || dbStatus.supabaseError?.includes('schema cache') || dbStatus.supabaseError?.includes('does not exist')) && (
-              <div className="bg-amber-950/50 border border-amber-600/50 rounded-2xl p-4 space-y-3">
-                <div className="flex items-start gap-3">
-                  <ShieldAlert className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-                  <div className="space-y-1 text-xs text-amber-200">
-                    <p className="font-extrabold text-amber-300 text-sm">⚠️ พบสาเหตุ: คีย์ Supabase เชื่อมต่อสำเร็จแล้ว แต่ยังไม่ได้สร้างตาราง (Tables)</p>
-                    <p className="text-slate-300 leading-relaxed">
-                      เนื่องจากฐานข้อมูล Supabase โครงการของคุณยังเป็นโครงการใหม่ที่ยังไม่มีตาราง <code>students</code>, <code>teachers</code>, <code>subjects</code>, <code>exams</code> ฯลฯ ทำให้ Supabase ส่งรหัสข้อผิดพลาด <code>PGRST205 (Table Not Found)</code>
-                    </p>
-                  </div>
-                </div>
-
-                <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3 text-xs space-y-2">
-                  <p className="font-bold text-cyan-300 flex items-center justify-between">
-                    <span>📌 วิธีสร้างตารางใน Supabase เพียง 1 นาที:</span>
-                    <span className="text-[10px] text-slate-400">SQL Schema Setup</span>
+            {/* Supabase Table Setup SQL Copy Helper - Unconditionally visible for easy access */}
+            <div className="bg-amber-950/40 border border-amber-600/40 rounded-2xl p-4 space-y-3">
+              <div className="flex items-start gap-3">
+                <ShieldAlert className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                <div className="space-y-1 text-xs text-amber-200">
+                  <p className="font-extrabold text-amber-300 text-sm">📌 คำสั่ง SQL สร้างตารางทั้งหมดลงใน Supabase (SQL Setup Script)</p>
+                  <p className="text-slate-300 leading-relaxed">
+                    หากโปรเจกต์ Supabase ของคุณยังไม่มีตาราง หรือต้องการสร้างตาราง <code>students</code>, <code>teachers</code>, <code>subjects</code>, <code>exams</code>, <code>questions</code>, <code>exam_results</code> ฯลฯ ให้คัดลอกคำสั่ง SQL ด้านล่างไปรันใน Supabase SQL Editor
                   </p>
-                  <ol className="list-decimal list-inside text-slate-300 space-y-1 leading-relaxed pl-1">
-                    <li>ไปที่เว็บไซต์ Supabase Dashboard → เมนู <b>SQL Editor</b></li>
-                    <li>กดปุ่ม <b>New Query</b></li>
-                    <li>กดปุ่ม <b>"คัดลอกคำสั่ง SQL สร้างตาราง"</b> ด้านล่าง แล้วนำไปวาง (Paste)</li>
-                    <li>กดปุ่ม <b>Run</b> สีเขียวใน Supabase แล้วกลับมากด <b>"ซิงค์ Local ขึ้น Cloud"</b> ได้ทันที!</li>
-                  </ol>
-
-                  <div className="pt-2 flex justify-end">
-                    <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(SUPABASE_SETUP_SQL);
-                        showToast('คัดลอกคำสั่ง SQL สร้างตารางเรียบร้อยแล้ว! นำไปวางใน Supabase SQL Editor แล้วกด Run ได้เลย', 'success');
-                      }}
-                      className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs rounded-xl flex items-center gap-2 cursor-pointer shadow-lg shadow-amber-500/20 transition-all"
-                    >
-                      <Download className="w-4 h-4" />
-                      <span>📋 คัดลอกคำสั่ง SQL สร้างตารางลง Supabase</span>
-                    </button>
-                  </div>
                 </div>
               </div>
-            )}
+
+              <div className="bg-slate-950/90 border border-slate-800 rounded-xl p-3 text-xs space-y-2">
+                <p className="font-bold text-cyan-300 flex items-center justify-between">
+                  <span>ขั้นตอนติดตั้งตารางเพียง 30 วินาที:</span>
+                  <span className="text-[10px] text-slate-400">SQL Schema Setup</span>
+                </p>
+                <ol className="list-decimal list-inside text-slate-300 space-y-1 leading-relaxed pl-1">
+                  <li>เปิด Supabase Dashboard → เลือกเมนู <b>SQL Editor</b></li>
+                  <li>กดปุ่ม <b>New Query</b></li>
+                  <li>กดปุ่ม <b>"คัดลอกคำสั่ง SQL สร้างตารางลง Supabase"</b> ด้านล่าง แล้ววางใน SQL Editor</li>
+                  <li>กดปุ่ม <b>Run</b> (สีเขียว) ใน Supabase จากนั้นกลับมากด <b>"ซิงค์ Local ขึ้น Cloud"</b> ในระบบนี้ได้ทันที!</li>
+                </ol>
+
+                <div className="pt-2 flex justify-end">
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(SUPABASE_SETUP_SQL);
+                      showToast('คัดลอกคำสั่ง SQL สร้างตารางเรียบร้อยแล้ว! นำไปวางใน Supabase SQL Editor แล้วกด Run ได้เลย', 'success');
+                    }}
+                    className="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs rounded-xl flex items-center gap-2 cursor-pointer shadow-lg shadow-amber-500/20 transition-all active:scale-95"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>📋 คัดลอกคำสั่ง SQL สร้างตารางลง Supabase</span>
+                  </button>
+                </div>
+              </div>
+            </div>
 
             {/* Details Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
