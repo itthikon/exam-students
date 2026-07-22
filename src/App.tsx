@@ -4,7 +4,9 @@ import {
   XCircle, Plus, Trash2, Upload, FileText, FileSpreadsheet, BarChart3, 
   Database, Copy, Check, RotateCcw, RefreshCw, Sliders, LogOut, 
   Clock, Settings, Search, Filter, Users, Menu, Maximize, Minimize, CheckSquare,
-  Brain, TrendingUp
+  Brain, TrendingUp, Radio, Tv, Activity, Bell, Send, MessageSquare, Megaphone,
+  MessageCircle, Download, UploadCloud, Globe, Heart, Pin, Volume2, ShieldAlert, Eye,
+  HelpCircle, MessageCircleQuestion
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
@@ -75,6 +77,67 @@ interface Teacher {
   role: 'admin' | 'teacher';
 }
 
+interface LiveSession {
+  student_id: string;
+  student_name: string;
+  class_group: string;
+  exam_id: string;
+  exam_title: string;
+  subject_id?: string;
+  subject_name?: string;
+  answered_count: number;
+  total_questions: number;
+  time_remaining: number;
+  status: 'taking' | 'submitted' | 'locked';
+  last_violation?: string;
+  last_active: string;
+}
+
+interface PopupMessage {
+  id: string;
+  target_type: 'all' | 'individual' | 'class' | 'subject';
+  target_value: string;
+  title: string;
+  body: string;
+  sender_name: string;
+  importance: 'info' | 'warning' | 'urgent';
+  created_at: string;
+  read_by?: string[];
+}
+
+interface Announcement {
+  id: string;
+  title: string;
+  content: string;
+  target_group: string;
+  is_pinned: boolean;
+  author_name: string;
+  created_at: string;
+}
+
+interface DiscussionComment {
+  id: string;
+  author_name: string;
+  author_role: 'teacher' | 'student' | 'admin';
+  content: string;
+  created_at: string;
+}
+
+interface DiscussionPost {
+  id: string;
+  title: string;
+  content: string;
+  author_id: string;
+  author_name: string;
+  author_role: 'teacher' | 'student' | 'admin';
+  category: 'general' | 'question' | 'suggestion';
+  class_group?: string;
+  subject_id?: string;
+  created_at: string;
+  likes: string[];
+  comments: DiscussionComment[];
+}
+
 function detectBrowser() {
   if (typeof window === 'undefined') {
     return {
@@ -129,7 +192,7 @@ export default function App() {
   const [userRole, setUserRole] = useState<'guest' | 'student' | 'teacher' | 'admin'>('guest');
   const [browserInfo, setBrowserInfo] = useState(detectBrowser);
   const [currentUser, setCurrentUser] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<'students' | 'subjects' | 'exams' | 'stats' | 'analysis'>('stats');
+  const [activeTab, setActiveTab] = useState<'students' | 'subjects' | 'exams' | 'stats' | 'analysis' | 'live_monitor' | 'popup_sender' | 'announcements' | 'backup'>('stats');
   const [dbStatus, setDbStatus] = useState({ useSupabase: false });
 
   // DB Data States
@@ -238,6 +301,37 @@ export default function App() {
   const [isTextImporterOpen, setIsTextImporterOpen] = useState(false);
   const [rawImporterText, setRawImporterText] = useState('');
   const [parsedQuestions, setParsedQuestions] = useState<Partial<Question>[]>([]);
+
+  // Feature 1: Live Exam Status Monitor State
+  const [liveSessions, setLiveSessions] = useState<LiveSession[]>([]);
+
+  // Feature 2: Database Backup & Restore State
+  const [isRestoringBackup, setIsRestoringBackup] = useState(false);
+
+  // Feature 3: Popup Messages State
+  const [popupTargetType, setPopupTargetType] = useState<'all' | 'individual' | 'class' | 'subject'>('all');
+  const [popupTargetValue, setPopupTargetValue] = useState('');
+  const [popupTitle, setPopupTitle] = useState('');
+  const [popupBody, setPopupBody] = useState('');
+  const [popupImportance, setPopupImportance] = useState<'info' | 'warning' | 'urgent'>('urgent');
+  const [sentPopups, setSentPopups] = useState<PopupMessage[]>([]);
+  const [studentUnreadPopups, setStudentUnreadPopups] = useState<PopupMessage[]>([]);
+  const [currentStudentPopupModal, setCurrentStudentPopupModal] = useState<PopupMessage | null>(null);
+
+  // Feature 4: Announcements & Discussion Board State
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [discussions, setDiscussions] = useState<DiscussionPost[]>([]);
+  const [newAncTitle, setNewAncTitle] = useState('');
+  const [newAncContent, setNewAncContent] = useState('');
+  const [newAncTargetGroup, setNewAncTargetGroup] = useState('all');
+  const [newAncIsPinned, setNewAncIsPinned] = useState(false);
+
+  const [newDiscTitle, setNewDiscTitle] = useState('');
+  const [newDiscContent, setNewDiscContent] = useState('');
+  const [newDiscCategory, setNewDiscCategory] = useState<'general' | 'question' | 'suggestion'>('question');
+  const [discFilterCategory, setDiscFilterCategory] = useState<string>('all');
+  const [discSearch, setDiscSearch] = useState<string>('');
+  const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
 
   // Parse Raw Text into Questions
   const parseRawExamText = (text: string): Partial<Question>[] => {
@@ -373,29 +467,31 @@ export default function App() {
       const dbData = await dbRes.json();
       setDbStatus(dbData);
 
-      const [subRes, exRes, stuRes, resRes, cheatRes, tRes, lockRes] = await Promise.all([
+      const [subRes, exRes, stuRes, resRes, cheatRes, tRes, lockRes, liveRes, popRes, ancRes, discRes] = await Promise.all([
         fetch('/api/subjects'),
         fetch('/api/exams'),
         fetch('/api/students'),
         fetch('/api/exam-results'),
         fetch('/api/cheat-logs'),
         fetch('/api/teachers'),
-        fetch('/api/lock-status')
+        fetch('/api/lock-status'),
+        fetch('/api/live-status'),
+        fetch('/api/popup-messages'),
+        fetch('/api/announcements'),
+        fetch('/api/discussions')
       ]);
 
-      if (!subRes.ok || !exRes.ok || !stuRes.ok || !resRes.ok || !cheatRes.ok || !tRes.ok) {
-        throw new Error('Some API resources failed to load');
-      }
-
-      setSubjects(await subRes.json());
-      setExams(await exRes.json());
-      setStudents(await stuRes.json());
-      setExamResults(await resRes.json());
-      setCheatLogs(await cheatRes.json());
-      setTeachers(await tRes.json());
-      if (lockRes.ok) {
-        setLockedStudents(await lockRes.json());
-      }
+      if (subRes.ok) setSubjects(await subRes.json());
+      if (exRes.ok) setExams(await exRes.json());
+      if (stuRes.ok) setStudents(await stuRes.json());
+      if (resRes.ok) setExamResults(await resRes.json());
+      if (cheatRes.ok) setCheatLogs(await cheatRes.json());
+      if (tRes.ok) setTeachers(await tRes.json());
+      if (lockRes.ok) setLockedStudents(await lockRes.json());
+      if (liveRes.ok) setLiveSessions(await liveRes.json());
+      if (popRes.ok) setSentPopups(await popRes.json());
+      if (ancRes.ok) setAnnouncements(await ancRes.json());
+      if (discRes.ok) setDiscussions(await discRes.json());
     } catch (e) {
       if (retries > 0) {
         console.warn(`Connection to API server failed. Retrying in ${delay}ms... (${retries} retries left)`);
@@ -409,24 +505,295 @@ export default function App() {
   useEffect(() => {
     refreshData();
     const interval = setInterval(() => {
-      // Poll real-time cheat logs and scores for teachers
+      // Poll real-time updates for teachers
       if (userRole === 'teacher' || userRole === 'admin') {
-        fetch('/api/cheat-logs')
-          .then(r => r.ok ? r.json() : Promise.reject())
-          .then(setCheatLogs)
-          .catch(() => {});
-        fetch('/api/exam-results')
-          .then(r => r.ok ? r.json() : Promise.reject())
-          .then(setExamResults)
-          .catch(() => {});
-        fetch('/api/lock-status')
-          .then(r => r.ok ? r.json() : Promise.reject())
-          .then(setLockedStudents)
-          .catch(() => {});
+        fetch('/api/cheat-logs').then(r => r.ok ? r.json() : Promise.reject()).then(setCheatLogs).catch(() => {});
+        fetch('/api/exam-results').then(r => r.ok ? r.json() : Promise.reject()).then(setExamResults).catch(() => {});
+        fetch('/api/lock-status').then(r => r.ok ? r.json() : Promise.reject()).then(setLockedStudents).catch(() => {});
+        fetch('/api/live-status').then(r => r.ok ? r.json() : Promise.reject()).then(setLiveSessions).catch(() => {});
       }
-    }, 5000);
+      // Poll announcements & discussions for everyone
+      fetch('/api/announcements').then(r => r.ok ? r.json() : Promise.reject()).then(setAnnouncements).catch(() => {});
+      fetch('/api/discussions').then(r => r.ok ? r.json() : Promise.reject()).then(setDiscussions).catch(() => {});
+    }, 4000);
     return () => clearInterval(interval);
   }, [userRole]);
+
+  // Heartbeat when student is taking exam
+  useEffect(() => {
+    if (examState === 'taking' && selectedExam && currentUser && currentUser.student_id) {
+      const sendHeartbeat = () => {
+        const answeredCount = Object.keys(studentAnswers).length;
+        const totalQ = examQuestions.length;
+        const subObj = subjects.find(s => s.id === selectedExam.subject_id);
+
+        fetch('/api/live-status/heartbeat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            student_id: currentUser.student_id,
+            student_name: currentUser.name || currentUser.student_id,
+            class_group: currentUser.class_group || '-',
+            exam_id: selectedExam.id,
+            exam_title: selectedExam.title,
+            subject_id: selectedExam.subject_id,
+            subject_name: subObj ? subObj.name : '',
+            answered_count: answeredCount,
+            total_questions: totalQ,
+            time_remaining: timeLeft,
+            status: isCheatLocked ? 'locked' : 'taking'
+          })
+        }).catch(() => {});
+      };
+
+      sendHeartbeat();
+      const hbInterval = setInterval(sendHeartbeat, 5000);
+
+      return () => {
+        clearInterval(hbInterval);
+        fetch('/api/live-status/end', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            student_id: currentUser.student_id,
+            exam_id: selectedExam.id
+          })
+        }).catch(() => {});
+      };
+    }
+  }, [examState, selectedExam, currentUser, studentAnswers, examQuestions.length, timeLeft, isCheatLocked]);
+
+  // Popup listener for active student
+  useEffect(() => {
+    if (userRole === 'student' && currentUser && currentUser.student_id) {
+      const checkStudentPopups = () => {
+        const queryParams = new URLSearchParams({
+          student_id: currentUser.student_id,
+          class_group: currentUser.class_group || '',
+          subject_id: selectedExam ? selectedExam.subject_id : ''
+        });
+
+        fetch(`/api/popup-messages/student?${queryParams}`)
+          .then(r => r.ok ? r.json() : [])
+          .then((msgs: PopupMessage[]) => {
+            if (Array.isArray(msgs) && msgs.length > 0) {
+              setStudentUnreadPopups(msgs);
+              setCurrentStudentPopupModal(prev => prev ? prev : msgs[0]);
+            }
+          })
+          .catch(() => {});
+      };
+
+      checkStudentPopups();
+      const popupInterval = setInterval(checkStudentPopups, 5000);
+      return () => clearInterval(popupInterval);
+    }
+  }, [userRole, currentUser, selectedExam]);
+
+  const handleAcknowledgePopup = async (msgId: string) => {
+    if (currentUser && currentUser.student_id) {
+      try {
+        await fetch(`/api/popup-messages/${msgId}/read`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ student_id: currentUser.student_id })
+        });
+      } catch (e) {}
+    }
+    const remaining = studentUnreadPopups.filter(m => m.id !== msgId);
+    setStudentUnreadPopups(remaining);
+    setCurrentStudentPopupModal(remaining.length > 0 ? remaining[0] : null);
+  };
+
+  // Backup & Restore Handlers
+  const handleDownloadBackup = () => {
+    const a = document.createElement('a');
+    a.href = '/api/backup/export';
+    a.download = `exam_system_backup_${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    showToast('กำลังดาวน์โหลดไฟล์สำรองฐานข้อมูล...', 'success');
+  };
+
+  const handleRestoreBackupFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setIsRestoringBackup(true);
+      const text = await file.text();
+      const json = JSON.parse(text);
+
+      const res = await fetch('/api/backup/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(json)
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'นำเข้าไม่สำเร็จ');
+
+      showToast('นำคืนฐานข้อมูลเรียบร้อยแล้ว!', 'success');
+      refreshData();
+    } catch (err: any) {
+      showToast('เกิดข้อผิดพลาดในการนำคืนข้อมูล: ' + err.message, 'error');
+    } finally {
+      setIsRestoringBackup(false);
+      e.target.value = '';
+    }
+  };
+
+  // Popup Message Handler
+  const handleSendPopup = async () => {
+    if (!popupTitle.trim() || !popupBody.trim()) {
+      showToast('กรุณากรอกหัวข้อและเนื้อหาข้อความแจ้งเตือน', 'warning');
+      return;
+    }
+    try {
+      const res = await fetch('/api/popup-messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          target_type: popupTargetType,
+          target_value: popupTargetValue,
+          title: popupTitle.trim(),
+          body: popupBody.trim(),
+          sender_name: currentUser?.name || 'ครูผู้สอน',
+          importance: popupImportance
+        })
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'ส่งข้อความไม่สำเร็จ');
+      }
+
+      showToast('ส่งข้อความ Popup ไปยังหน้าจอนักเรียนเรียบร้อยแล้ว!', 'success');
+      setPopupTitle('');
+      setPopupBody('');
+      setPopupTargetValue('');
+      fetch('/api/popup-messages').then(r => r.json()).then(setSentPopups);
+    } catch (e: any) {
+      showToast('เกิดข้อผิดพลาด: ' + e.message, 'error');
+    }
+  };
+
+  const handleDeletePopup = async (id: string) => {
+    try {
+      await fetch(`/api/popup-messages/${id}`, { method: 'DELETE' });
+      setSentPopups(prev => prev.filter(p => p.id !== id));
+      showToast('ลบข้อความ Popup เรียบร้อย', 'success');
+    } catch (e) {}
+  };
+
+  // Announcements & Discussions Handlers
+  const handleCreateAnnouncement = async () => {
+    if (!newAncTitle.trim() || !newAncContent.trim()) {
+      showToast('กรุณากรอกหัวข้อและเนื้อหาประกาศ', 'warning');
+      return;
+    }
+    try {
+      const res = await fetch('/api/announcements', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: newAncTitle.trim(),
+          content: newAncContent.trim(),
+          target_group: newAncTargetGroup,
+          is_pinned: newAncIsPinned,
+          author_name: currentUser?.name || 'ครูผู้สอน'
+        })
+      });
+      if (!res.ok) throw new Error('ไม่สามารถสร้างประกาศได้');
+      showToast('สร้างประกาศข่าวสารเรียบร้อยแล้ว!', 'success');
+      setNewAncTitle('');
+      setNewAncContent('');
+      fetch('/api/announcements').then(r => r.json()).then(setAnnouncements);
+    } catch (e: any) {
+      showToast(e.message, 'error');
+    }
+  };
+
+  const handleDeleteAnnouncement = async (id: string) => {
+    try {
+      await fetch(`/api/announcements/${id}`, { method: 'DELETE' });
+      setAnnouncements(prev => prev.filter(a => a.id !== id));
+      showToast('ลบประกาศข่าวสารสำเร็จ', 'success');
+    } catch (e) {}
+  };
+
+  const handleCreateDiscussion = async () => {
+    if (!newDiscTitle.trim() || !newDiscContent.trim()) {
+      showToast('กรุณากรอกหัวข้อและเนื้อหาข้อความกระทู้', 'warning');
+      return;
+    }
+    try {
+      const res = await fetch('/api/discussions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: newDiscTitle.trim(),
+          content: newDiscContent.trim(),
+          author_id: currentUser?.student_id || currentUser?.id || 'user',
+          author_name: currentUser?.name || 'ผู้ใช้งาน',
+          author_role: userRole === 'student' ? 'student' : 'teacher',
+          category: newDiscCategory,
+          class_group: currentUser?.class_group || ''
+        })
+      });
+      if (!res.ok) throw new Error('โพสต์ไม่สำเร็จ');
+      showToast('โพสต์ตั้งกระทู้ถาม-ตอบเรียบร้อยแล้ว!', 'success');
+      setNewDiscTitle('');
+      setNewDiscContent('');
+      fetch('/api/discussions').then(r => r.json()).then(setDiscussions);
+    } catch (e: any) {
+      showToast(e.message, 'error');
+    }
+  };
+
+  const handleAddDiscussionComment = async (discId: string) => {
+    const text = commentInputs[discId];
+    if (!text || !text.trim()) return;
+
+    try {
+      const res = await fetch(`/api/discussions/${discId}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          author_name: currentUser?.name || 'ผู้ใช้งาน',
+          author_role: userRole === 'student' ? 'student' : 'teacher',
+          content: text.trim()
+        })
+      });
+      if (!res.ok) throw new Error('แสดงความคิดเห็นไม่สำเร็จ');
+      setCommentInputs(prev => ({ ...prev, [discId]: '' }));
+      fetch('/api/discussions').then(r => r.json()).then(setDiscussions);
+      showToast('ตอบกลับความคิดเห็นเรียบร้อย', 'success');
+    } catch (e: any) {
+      showToast(e.message, 'error');
+    }
+  };
+
+  const handleLikeDiscussion = async (discId: string) => {
+    const userId = currentUser?.student_id || currentUser?.id || 'guest';
+    try {
+      await fetch(`/api/discussions/${discId}/like`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: userId })
+      });
+      fetch('/api/discussions').then(r => r.json()).then(setDiscussions);
+    } catch (e) {}
+  };
+
+  const handleDeleteDiscussion = async (discId: string) => {
+    try {
+      await fetch(`/api/discussions/${discId}`, { method: 'DELETE' });
+      setDiscussions(prev => prev.filter(d => d.id !== discId));
+      showToast('ลบกระทู้เรียบร้อย', 'success');
+    } catch (e) {}
+  };
 
   // LOGIN OPERATIONS
   const handleStudentLogin = async (e: React.FormEvent) => {
@@ -2282,7 +2649,38 @@ CREATE TABLE cheat_logs (
                 className={`w-full flex items-center gap-3 px-3 py-3 text-xs font-semibold rounded-xl transition-all cursor-pointer ${activeTab === 'stats' ? 'tab-3d-active text-white' : 'tab-3d-inactive text-slate-300 hover:bg-slate-800'}`}
               >
                 <BarChart3 className="w-4 h-4 text-rose-500" />
-                <span>ภาพรวมและติดตามสอบเรียลไทม์</span>
+                <span>ภาพรวมผลคะแนนการสอบ</span>
+              </button>
+
+              <button 
+                onClick={() => setActiveTab('live_monitor')}
+                className={`w-full flex items-center justify-between px-3 py-3 text-xs font-semibold rounded-xl transition-all cursor-pointer ${activeTab === 'live_monitor' ? 'tab-3d-active text-white' : 'tab-3d-inactive text-slate-300 hover:bg-slate-800'}`}
+              >
+                <div className="flex items-center gap-3">
+                  <Activity className="w-4 h-4 text-emerald-400 animate-pulse" />
+                  <span>ติดตามการสอบเรียลไทม์</span>
+                </div>
+                {liveSessions.length > 0 && (
+                  <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 text-[10px] font-bold rounded-full border border-emerald-500/30">
+                    {liveSessions.length}
+                  </span>
+                )}
+              </button>
+
+              <button 
+                onClick={() => setActiveTab('popup_sender')}
+                className={`w-full flex items-center gap-3 px-3 py-3 text-xs font-semibold rounded-xl transition-all cursor-pointer ${activeTab === 'popup_sender' ? 'tab-3d-active text-white' : 'tab-3d-inactive text-slate-300 hover:bg-slate-800'}`}
+              >
+                <Bell className="w-4 h-4 text-amber-400" />
+                <span>ส่งข้อความแจ้งเตือน Popup</span>
+              </button>
+
+              <button 
+                onClick={() => setActiveTab('announcements')}
+                className={`w-full flex items-center gap-3 px-3 py-3 text-xs font-semibold rounded-xl transition-all cursor-pointer ${activeTab === 'announcements' ? 'tab-3d-active text-white' : 'tab-3d-inactive text-slate-300 hover:bg-slate-800'}`}
+              >
+                <Megaphone className="w-4 h-4 text-indigo-400" />
+                <span>ประกาศ & กระดานสนทนา</span>
               </button>
 
               <button 
@@ -2307,6 +2705,14 @@ CREATE TABLE cheat_logs (
               >
                 <Brain className="w-4 h-4 text-rose-500" />
                 <span>วิเคราะห์คุณภาพข้อสอบ (CTT)</span>
+              </button>
+
+              <button 
+                onClick={() => setActiveTab('backup')}
+                className={`w-full flex items-center gap-3 px-3 py-3 text-xs font-semibold rounded-xl transition-all cursor-pointer ${activeTab === 'backup' ? 'tab-3d-active text-white' : 'tab-3d-inactive text-slate-300 hover:bg-slate-800'}`}
+              >
+                <Database className="w-4 h-4 text-cyan-400" />
+                <span>สำรอง & คืนค่าฐานข้อมูล</span>
               </button>
             </aside>
 

@@ -166,7 +166,56 @@ if (!fs.existsSync(dbPath)) {
 function readOfflineDb() {
   try {
     const raw = fs.readFileSync(dbPath, 'utf-8');
-    return JSON.parse(raw);
+    const db = JSON.parse(raw);
+    if (!db.teachers) db.teachers = defaultDbData.teachers;
+    if (!db.students) db.students = defaultDbData.students;
+    if (!db.subjects) db.subjects = defaultDbData.subjects;
+    if (!db.exams) db.exams = defaultDbData.exams;
+    if (!db.questions) db.questions = defaultDbData.questions;
+    if (!db.exam_results) db.exam_results = defaultDbData.exam_results;
+    if (!db.cheat_logs) db.cheat_logs = defaultDbData.cheat_logs;
+    if (!db.locked_students) db.locked_students = [];
+    if (!db.live_sessions) db.live_sessions = [];
+    if (!db.popup_messages) db.popup_messages = [];
+    if (!db.announcements) {
+      db.announcements = [
+        {
+          id: 'anc1',
+          title: 'ยินดีต้อนรับสู่ระบบทดสอบออนไลน์ ต้านการทุจริต',
+          content: 'ขอให้นักเรียนทุกคนอ่านข้อปฏิบัติในการสอบอย่างเคร่งครัด ห้ามสลับหน้าจอหรือเปิดแท็บอื่นระหว่างทำแบบทดสอบ',
+          target_group: 'all',
+          is_pinned: true,
+          author_name: 'ครูอิทธิกร (Admin)',
+          created_at: new Date().toISOString()
+        }
+      ];
+    }
+    if (!db.discussions) {
+      db.discussions = [
+        {
+          id: 'disc1',
+          title: 'สอบถามเรื่องขอบเขตเนื้อหาการสอบกลางภาควิชาฟิสิกส์',
+          content: 'คุณครูครับ การสอบกลางภาควิชาฟิสิกส์ออกเรื่องแนวการเคลื่อนที่ตรงอย่างเดียว หรือออกเรื่องแรงด้วยครับ?',
+          author_id: 'STD001',
+          author_name: 'สมชาย รักเรียน',
+          author_role: 'student',
+          category: 'question',
+          class_group: 'ม.6/1',
+          created_at: new Date(Date.now() - 7200000).toISOString(),
+          likes: ['s2', 't1'],
+          comments: [
+            {
+              id: 'cmt1',
+              author_name: 'ครูสมศรี ใจดี',
+              author_role: 'teacher',
+              content: 'สอบออกทั้งเรื่องแรงและการเคลื่อนที่แนวดิ่งค่ะ ให้ทบทวนสูตรคำนวณ v = u + at ด้วยนะคะ',
+              created_at: new Date(Date.now() - 3600000).toISOString()
+            }
+          ]
+        }
+      ];
+    }
+    return db;
   } catch (err) {
     console.error('Error reading offline database file:', err);
     return defaultDbData;
@@ -968,6 +1017,336 @@ async function startServer() {
 
     writeOfflineDb(db);
     res.json({ success: true, is_locked });
+  });
+
+  // ==========================================
+  // FEATURE 1: LIVE EXAM STATUS MONITORING API
+  // ==========================================
+  app.post('/api/live-status/heartbeat', (req, res) => {
+    const { student_id, student_name, class_group, exam_id, exam_title, subject_id, subject_name, answered_count, total_questions, time_remaining, status, last_violation } = req.body;
+    if (!student_id || !exam_id) {
+      return res.status(400).json({ error: 'ข้อมูลไม่ครบถ้วน' });
+    }
+    const db = readOfflineDb();
+    if (!db.live_sessions) db.live_sessions = [];
+    
+    const existingIndex = db.live_sessions.findIndex((s: any) => s.student_id === student_id && s.exam_id === exam_id);
+    const sessionObj = {
+      student_id,
+      student_name: student_name || 'นักเรียน',
+      class_group: class_group || '-',
+      exam_id,
+      exam_title: exam_title || 'ข้อสอบ',
+      subject_id: subject_id || '',
+      subject_name: subject_name || '',
+      answered_count: answered_count || 0,
+      total_questions: total_questions || 0,
+      time_remaining: time_remaining !== undefined ? time_remaining : 0,
+      status: status || 'taking',
+      last_violation: last_violation || null,
+      last_active: new Date().toISOString()
+    };
+
+    if (existingIndex !== -1) {
+      db.live_sessions[existingIndex] = sessionObj;
+    } else {
+      db.live_sessions.push(sessionObj);
+    }
+    writeOfflineDb(db);
+    res.json({ success: true });
+  });
+
+  app.get('/api/live-status', (req, res) => {
+    const db = readOfflineDb();
+    if (!db.live_sessions) db.live_sessions = [];
+    // Remove stale sessions older than 45 seconds
+    const now = Date.now();
+    db.live_sessions = db.live_sessions.filter((s: any) => {
+      const diffSec = (now - new Date(s.last_active).getTime()) / 1000;
+      return diffSec < 45;
+    });
+    writeOfflineDb(db);
+    res.json(db.live_sessions);
+  });
+
+  app.post('/api/live-status/end', (req, res) => {
+    const { student_id, exam_id } = req.body;
+    const db = readOfflineDb();
+    if (db.live_sessions) {
+      db.live_sessions = db.live_sessions.filter((s: any) => !(s.student_id === student_id && s.exam_id === exam_id));
+      writeOfflineDb(db);
+    }
+    res.json({ success: true });
+  });
+
+  // ==========================================
+  // FEATURE 2: DATABASE BACKUP & RESTORE API
+  // ==========================================
+  app.get('/api/backup/export', (req, res) => {
+    const db = readOfflineDb();
+    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="exam_system_backup_${dateStr}.json"`);
+    res.send(JSON.stringify(db, null, 2));
+  });
+
+  app.post('/api/backup/import', async (req, res) => {
+    try {
+      const backupData = req.body;
+      if (!backupData || typeof backupData !== 'object' || !backupData.teachers || !backupData.students) {
+        return res.status(400).json({ error: 'รูปแบบไฟล์สำรองฐานข้อมูลไม่ถูกต้อง' });
+      }
+
+      writeOfflineDb(backupData);
+
+      // If Supabase is enabled, sync core tables
+      if (useSupabase) {
+        try {
+          if (Array.isArray(backupData.students) && backupData.students.length > 0) {
+            await supabase.from('students').upsert(backupData.students);
+          }
+          if (Array.isArray(backupData.teachers) && backupData.teachers.length > 0) {
+            await supabase.from('teachers').upsert(backupData.teachers);
+          }
+          if (Array.isArray(backupData.subjects) && backupData.subjects.length > 0) {
+            await supabase.from('subjects').upsert(backupData.subjects);
+          }
+          if (Array.isArray(backupData.exams) && backupData.exams.length > 0) {
+            await supabase.from('exams').upsert(backupData.exams);
+          }
+        } catch (spErr) {
+          console.error('Supabase backup restore sync error:', spErr);
+        }
+      }
+
+      res.json({ success: true, message: 'นำคืนฐานข้อมูลเรียบร้อยแล้ว!' });
+    } catch (err: any) {
+      res.status(500).json({ error: 'เกิดข้อผิดพลาดในการนำคืนข้อมูล: ' + err.message });
+    }
+  });
+
+  // ==========================================
+  // FEATURE 3: POPUP MESSAGES API
+  // ==========================================
+  app.get('/api/popup-messages', (req, res) => {
+    const db = readOfflineDb();
+    res.json(db.popup_messages || []);
+  });
+
+  app.post('/api/popup-messages', (req, res) => {
+    const { target_type, target_value, title, body, sender_name, importance } = req.body;
+    if (!title || !body) {
+      return res.status(400).json({ error: 'กรุณากรอกหัวข้อและเนื้อหาข้อความ' });
+    }
+    const db = readOfflineDb();
+    if (!db.popup_messages) db.popup_messages = [];
+
+    const newMsg = {
+      id: 'pop_' + Date.now(),
+      target_type: target_type || 'all',
+      target_value: target_value || '',
+      title,
+      body,
+      sender_name: sender_name || 'ครูผู้สอน',
+      importance: importance || 'info',
+      created_at: new Date().toISOString(),
+      read_by: []
+    };
+
+    db.popup_messages.unshift(newMsg);
+    writeOfflineDb(db);
+    res.json(newMsg);
+  });
+
+  app.get('/api/popup-messages/student', (req, res) => {
+    const { student_id, class_group, subject_id } = req.query;
+    if (!student_id) {
+      return res.json([]);
+    }
+    const db = readOfflineDb();
+    const allMsgs = db.popup_messages || [];
+
+    const studentMsgs = allMsgs.filter((m: any) => {
+      if (Array.isArray(m.read_by) && m.read_by.includes(String(student_id))) {
+        return false;
+      }
+      if (m.target_type === 'all') return true;
+      if (m.target_type === 'individual' && m.target_value === student_id) return true;
+      if (m.target_type === 'class' && m.target_value === class_group) return true;
+      if (m.target_type === 'subject' && m.target_value === subject_id) return true;
+      return false;
+    });
+
+    res.json(studentMsgs);
+  });
+
+  app.post('/api/popup-messages/:id/read', (req, res) => {
+    const msgId = req.params.id;
+    const { student_id } = req.body;
+    if (!student_id) {
+      return res.status(400).json({ error: 'ไม่พบรหัสนักเรียน' });
+    }
+
+    const db = readOfflineDb();
+    if (db.popup_messages) {
+      const msg = db.popup_messages.find((m: any) => m.id === msgId);
+      if (msg) {
+        if (!Array.isArray(msg.read_by)) msg.read_by = [];
+        if (!msg.read_by.includes(String(student_id))) {
+          msg.read_by.push(String(student_id));
+        }
+        writeOfflineDb(db);
+      }
+    }
+    res.json({ success: true });
+  });
+
+  app.delete('/api/popup-messages/:id', (req, res) => {
+    const msgId = req.params.id;
+    const db = readOfflineDb();
+    if (db.popup_messages) {
+      db.popup_messages = db.popup_messages.filter((m: any) => m.id !== msgId);
+      writeOfflineDb(db);
+    }
+    res.json({ success: true });
+  });
+
+  // ==========================================
+  // FEATURE 4: ANNOUNCEMENTS & DISCUSSIONS API
+  // ==========================================
+  app.get('/api/announcements', (req, res) => {
+    const db = readOfflineDb();
+    res.json(db.announcements || []);
+  });
+
+  app.post('/api/announcements', (req, res) => {
+    const { title, content, target_group, is_pinned, author_name } = req.body;
+    if (!title || !content) {
+      return res.status(400).json({ error: 'กรุณากรอกหัวข้อและเนื้อหาประกาศ' });
+    }
+    const db = readOfflineDb();
+    if (!db.announcements) db.announcements = [];
+
+    const newAnc = {
+      id: 'anc_' + Date.now(),
+      title,
+      content,
+      target_group: target_group || 'all',
+      is_pinned: !!is_pinned,
+      author_name: author_name || 'ระบบประกาศ',
+      created_at: new Date().toISOString()
+    };
+
+    if (newAnc.is_pinned) {
+      db.announcements.unshift(newAnc);
+    } else {
+      db.announcements.push(newAnc);
+    }
+
+    writeOfflineDb(db);
+    res.json(newAnc);
+  });
+
+  app.delete('/api/announcements/:id', (req, res) => {
+    const ancId = req.params.id;
+    const db = readOfflineDb();
+    if (db.announcements) {
+      db.announcements = db.announcements.filter((a: any) => a.id !== ancId);
+      writeOfflineDb(db);
+    }
+    res.json({ success: true });
+  });
+
+  app.get('/api/discussions', (req, res) => {
+    const db = readOfflineDb();
+    res.json(db.discussions || []);
+  });
+
+  app.post('/api/discussions', (req, res) => {
+    const { title, content, author_id, author_name, author_role, category, class_group, subject_id } = req.body;
+    if (!title || !content) {
+      return res.status(400).json({ error: 'กรุณากรอกหัวข้อและเนื้อหาข้อความ' });
+    }
+    const db = readOfflineDb();
+    if (!db.discussions) db.discussions = [];
+
+    const newDisc = {
+      id: 'disc_' + Date.now(),
+      title,
+      content,
+      author_id: author_id || 'guest',
+      author_name: author_name || 'ผู้ใช้งาน',
+      author_role: author_role || 'student',
+      category: category || 'general',
+      class_group: class_group || '',
+      subject_id: subject_id || '',
+      created_at: new Date().toISOString(),
+      likes: [],
+      comments: []
+    };
+
+    db.discussions.unshift(newDisc);
+    writeOfflineDb(db);
+    res.json(newDisc);
+  });
+
+  app.post('/api/discussions/:id/comments', (req, res) => {
+    const discId = req.params.id;
+    const { author_name, author_role, content } = req.body;
+    if (!content) {
+      return res.status(400).json({ error: 'กรุณากรอกข้อความความคิดเห็น' });
+    }
+    const db = readOfflineDb();
+    if (db.discussions) {
+      const disc = db.discussions.find((d: any) => d.id === discId);
+      if (disc) {
+        if (!Array.isArray(disc.comments)) disc.comments = [];
+        const newCmt = {
+          id: 'cmt_' + Date.now(),
+          author_name: author_name || 'ผู้ตอบ',
+          author_role: author_role || 'student',
+          content,
+          created_at: new Date().toISOString()
+        };
+        disc.comments.push(newCmt);
+        writeOfflineDb(db);
+        return res.json(newCmt);
+      }
+    }
+    res.status(404).json({ error: 'ไม่พบหัวข้อการสนทนานี้' });
+  });
+
+  app.post('/api/discussions/:id/like', (req, res) => {
+    const discId = req.params.id;
+    const { user_id } = req.body;
+    if (!user_id) return res.status(400).json({ error: 'ไม่พบรหัสผู้ใช้' });
+
+    const db = readOfflineDb();
+    if (db.discussions) {
+      const disc = db.discussions.find((d: any) => d.id === discId);
+      if (disc) {
+        if (!Array.isArray(disc.likes)) disc.likes = [];
+        const idx = disc.likes.indexOf(user_id);
+        if (idx !== -1) {
+          disc.likes.splice(idx, 1);
+        } else {
+          disc.likes.push(user_id);
+        }
+        writeOfflineDb(db);
+        return res.json({ likes: disc.likes });
+      }
+    }
+    res.status(404).json({ error: 'ไม่พบหัวข้อการสนทนา' });
+  });
+
+  app.delete('/api/discussions/:id', (req, res) => {
+    const discId = req.params.id;
+    const db = readOfflineDb();
+    if (db.discussions) {
+      db.discussions = db.discussions.filter((d: any) => d.id !== discId);
+      writeOfflineDb(db);
+    }
+    res.json({ success: true });
   });
 
   // ADMIN ENDPOINT: UPDATE USER ROLE OR DETAILS
