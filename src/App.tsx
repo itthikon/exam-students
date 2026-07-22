@@ -305,6 +305,10 @@ export default function App() {
   // Feature 1: Live Exam Status Monitor State
   const [liveSessions, setLiveSessions] = useState<LiveSession[]>([]);
 
+  // Submit Confirmation & Submission Ref
+  const [showSubmitConfirmModal, setShowSubmitConfirmModal] = useState(false);
+  const isSubmittingRef = useRef(false);
+
   // Feature 2: Database Backup & Restore State
   const [isRestoringBackup, setIsRestoringBackup] = useState(false);
 
@@ -1362,7 +1366,7 @@ export default function App() {
 
     // 1. Tab switching / Minimizing / Visibility
     const handleVisibilityChange = async () => {
-      if (level === 'off') return;
+      if (level === 'off' || isSubmittingRef.current) return;
       if (document.hidden) {
         if (level === 'strict' || level === 'moderate') {
           setIsCheatLocked(true);
@@ -1385,7 +1389,7 @@ export default function App() {
 
     // 2. Window Blur (e.g., clicking on developer tools, dual screen popup, or activating screenshot snipping tools)
     const handleWindowBlur = () => {
-      if (level === 'off') return;
+      if (level === 'off' || isSubmittingRef.current) return;
 
       if (level === 'strict') {
         setIsScreenBlackout(true);
@@ -1422,7 +1426,7 @@ export default function App() {
 
     // 3. Exit Fullscreen Detection
     const handleFullscreenChange = () => {
-      if (level === 'off') return;
+      if (level === 'off' || isSubmittingRef.current) return;
       const isFull = !!(document.fullscreenElement || (document as any).webkitFullscreenElement);
       setIsFullscreen(isFull);
       if (!isFull) {
@@ -1447,7 +1451,7 @@ export default function App() {
 
     // 4. Block hotkeys & Screen capture attempts (Copy, Paste, Print, Inspect, Screenshot)
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (level === 'off') return;
+      if (level === 'off' || isSubmittingRef.current) return;
       const isPrtSc = e.key === 'PrintScreen' || e.keyCode === 44;
       const isSnipTool = (e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'S' || e.key === 's' || e.key === '4' || e.key === '3');
       const isCopy = e.ctrlKey && (e.key === 'c' || e.key === 'C');
@@ -1492,7 +1496,7 @@ export default function App() {
 
     // 5. Block right click context menu
     const handleContextMenu = (e: MouseEvent) => {
-      if (level === 'off') return;
+      if (level === 'off' || isSubmittingRef.current) return;
       e.preventDefault();
       logCheatEvent('right_click', 'พยายามคลิกขวาหน้าเว็บ');
       showToast('ระบบความปลอดภัย: ปิดการใช้งานปุ่มคลิกขวา', 'warning');
@@ -1509,7 +1513,7 @@ export default function App() {
       setTimeLeft(prev => {
         if (prev <= 1) {
           clearInterval(timer);
-          handleSubmitExam(true); // Auto submit on timeout
+          executeExamSubmission(true); // Auto submit on timeout
           return 0;
         }
         return prev - 1;
@@ -1609,10 +1613,19 @@ export default function App() {
     }
   };
 
-  const handleSubmitExam = async (isTimeout = false) => {
-    if (!selectedExam || !currentUser) return;
+  const triggerSubmitExam = () => {
+    isSubmittingRef.current = true;
+    setShowSubmitConfirmModal(true);
+  };
 
-    if (!isTimeout && !confirm('คุณยืนยันที่จะส่งข้อสอบใช่หรือไม่? การสแกนข้อมูลและคะแนนจะเริ่มทำงานทันที')) return;
+  const cancelSubmitExam = () => {
+    setShowSubmitConfirmModal(false);
+    isSubmittingRef.current = false;
+  };
+
+  const executeExamSubmission = async (isTimeout = false) => {
+    if (!selectedExam || !currentUser) return;
+    isSubmittingRef.current = true;
 
     // Calculate score
     let totalScore = 0;
@@ -1647,16 +1660,21 @@ export default function App() {
       });
       const data = await res.json();
       if (res.ok) {
+        setShowSubmitConfirmModal(false);
         setFinishedResult(data);
         setExamState('finished');
         if (document.exitFullscreen) {
           document.exitFullscreen().catch(() => {});
         }
-        showToast('บันทึกและตรวจคะแนนของคุณแบบเรียลไทม์เรียบร้อยแล้ว!');
+        showToast('บันทึกและตรวจคะแนนของคุณแบบเรียลไทม์เรียบร้อยแล้ว!', 'success');
         refreshData();
       }
     } catch (err) {
       showToast('ไม่สามารถบันทึกคะแนนเข้าฐานข้อมูลได้ โปรดแจ้งคุณครู', 'error');
+    } finally {
+      setTimeout(() => {
+        isSubmittingRef.current = false;
+      }, 1000);
     }
   };
 
@@ -2370,7 +2388,7 @@ CREATE TABLE cheat_logs (
                     </div>
 
                     <button 
-                      onClick={() => handleSubmitExam(false)}
+                      onClick={triggerSubmitExam}
                       className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl cursor-pointer shadow transition-all"
                     >
                       ส่งข้อสอบ
@@ -2451,7 +2469,7 @@ CREATE TABLE cheat_logs (
                         </button>
                       ) : (
                         <button
-                          onClick={() => handleSubmitExam(false)}
+                          onClick={triggerSubmitExam}
                           className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs shadow transition-all cursor-pointer"
                         >
                           เสร็จสิ้นและส่งข้อสอบ
@@ -2502,6 +2520,49 @@ CREATE TABLE cheat_logs (
                     </div>
                   </div>
                 </div>
+
+                {/* Custom Modal Confirmation for Exam Submission */}
+                {showSubmitConfirmModal && (
+                  <div className="fixed inset-0 z-[100] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
+                    <motion.div 
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="bg-slate-900 border border-slate-800 rounded-3xl p-6 md:p-8 max-w-md w-full shadow-2xl text-center space-y-6"
+                    >
+                      <div className="w-16 h-16 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center mx-auto">
+                        <Send className="w-8 h-8" />
+                      </div>
+
+                      <div>
+                        <h3 className="text-xl font-bold text-white mb-2">ยืนยันการส่งข้อสอบ</h3>
+                        <p className="text-sm text-slate-300">
+                          คุณได้ตอบข้อสอบไปแล้ว <span className="font-bold text-emerald-400">{Object.keys(studentAnswers).length}</span> จากทั้งหมด <span className="font-bold text-slate-100">{examQuestions.length}</span> ข้อ
+                        </p>
+                        {Object.keys(studentAnswers).length < examQuestions.length && (
+                          <p className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-xl p-2.5 mt-3">
+                            ⚠️ คุณยังมีข้อสอบที่ไม่ได้ตอบอีก {examQuestions.length - Object.keys(studentAnswers).length} ข้อ
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-3 pt-2">
+                        <button
+                          onClick={cancelSubmitExam}
+                          className="flex-1 py-3 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-medium text-xs cursor-pointer transition-all"
+                        >
+                          กลับไปทำข้อสอบต่อ
+                        </button>
+                        <button
+                          onClick={() => executeExamSubmission(false)}
+                          className="flex-1 py-3 px-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs shadow cursor-pointer transition-all flex items-center justify-center gap-2"
+                        >
+                          <Check className="w-4 h-4" />
+                          ยืนยันส่งข้อสอบ
+                        </button>
+                      </div>
+                    </motion.div>
+                  </div>
+                )}
               </div>
             )}
 
