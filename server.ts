@@ -31,7 +31,6 @@ if (supabaseUrl && supabaseSecretKey) {
 const dbDir = path.join(__dirname, 'data');
 const dbPath = path.join(dbDir, 'offline_db.json');
 
-// Ensure offline db file exists with initial beautiful seed data
 if (!fs.existsSync(dbDir)) {
   fs.mkdirSync(dbDir, { recursive: true });
 }
@@ -54,11 +53,13 @@ const defaultDbData = {
   live_sessions: []
 };
 
-// Force overwrite offline_db.json if it contains legacy mock data
-try {
-  fs.writeFileSync(dbPath, JSON.stringify(defaultDbData, null, 2), 'utf-8');
-} catch (e) {
-  console.error('Error resetting offline db to clean state:', e);
+// Only initialize offline_db.json if it doesn't exist yet to avoid wiping user data
+if (!fs.existsSync(dbPath)) {
+  try {
+    fs.writeFileSync(dbPath, JSON.stringify(defaultDbData, null, 2), 'utf-8');
+  } catch (e) {
+    console.error('Error initializing offline db:', e);
+  }
 }
 
 // Helpers for reading/writing offline DB
@@ -684,17 +685,8 @@ async function startServer() {
       class_group: String(s.class_group || 'ม.6').trim()
     })).filter(s => s.student_id && s.name);
 
-    if (useSupabase) {
-      try {
-        const { error } = await supabase.from('students').upsert(normalizedStudents);
-        if (!error) return res.json({ success: true, count: normalizedStudents.length });
-      } catch (err) {
-        console.error('Supabase students roster save failed:', err);
-      }
-    }
-
+    // ALWAYS write to local offline DB first so data is guaranteed saved on server
     const db = readOfflineDb();
-    // Insert and avoid duplicate Student IDs
     for (const student of normalizedStudents) {
       const existingIdx = db.students.findIndex((s: any) => s.student_id === student.student_id);
       if (existingIdx !== -1) {
@@ -704,7 +696,31 @@ async function startServer() {
       }
     }
     writeOfflineDb(db);
-    res.json({ success: true, count: normalizedStudents.length });
+
+    let savedToCloud = false;
+    let cloudError: string | null = null;
+
+    if (useSupabase && supabase) {
+      try {
+        const { error } = await supabase.from('students').upsert(normalizedStudents);
+        if (!error) {
+          savedToCloud = true;
+        } else {
+          cloudError = error.message;
+          console.error('Supabase students roster save failed:', error);
+        }
+      } catch (err: any) {
+        cloudError = err.message || 'Supabase connection error';
+        console.error('Supabase students roster save failed:', err);
+      }
+    }
+
+    res.json({
+      success: true,
+      count: normalizedStudents.length,
+      savedToCloud,
+      cloudError
+    });
   });
 
   // GET STUDENTS
@@ -1094,6 +1110,81 @@ async function startServer() {
       res.json({ success: true, message: 'นำคืนฐานข้อมูลเรียบร้อยแล้ว!' });
     } catch (err: any) {
       res.status(500).json({ error: 'เกิดข้อผิดพลาดในการนำคืนข้อมูล: ' + err.message });
+    }
+  });
+
+  // MANUAL SYNC ALL LOCAL DATA TO SUPABASE CLOUD
+  app.post('/api/db-sync-to-cloud', async (req, res) => {
+    if (!useSupabase || !supabase) {
+      return res.status(400).json({ 
+        error: 'ระบบไม่ได้เปิดใช้งาน Cloud Supabase หรือยังไม่ได้ตั้งค่าคีย์ SUPABASE_SECRET_KEY/SUPABASE_PUBLISHABLE_KEY ในไฟล์ .env' 
+      });
+    }
+
+    const db = readOfflineDb();
+    const syncResults: any = {};
+    const errors: string[] = [];
+
+    try {
+      if (Array.isArray(db.teachers) && db.teachers.length > 0) {
+        const { error } = await supabase.from('teachers').upsert(db.teachers);
+        if (error) errors.push(`Teachers: ${error.message}`);
+        else syncResults.teachers = db.teachers.length;
+      }
+
+      if (Array.isArray(db.students) && db.students.length > 0) {
+        const { error } = await supabase.from('students').upsert(db.students);
+        if (error) errors.push(`Students: ${error.message}`);
+        else syncResults.students = db.students.length;
+      }
+
+      if (Array.isArray(db.subjects) && db.subjects.length > 0) {
+        const { error } = await supabase.from('subjects').upsert(db.subjects);
+        if (error) errors.push(`Subjects: ${error.message}`);
+        else syncResults.subjects = db.subjects.length;
+      }
+
+      if (Array.isArray(db.exams) && db.exams.length > 0) {
+        const { error } = await supabase.from('exams').upsert(db.exams);
+        if (error) errors.push(`Exams: ${error.message}`);
+        else syncResults.exams = db.exams.length;
+      }
+
+      if (Array.isArray(db.questions) && db.questions.length > 0) {
+        const { error } = await supabase.from('questions').upsert(db.questions);
+        if (error) errors.push(`Questions: ${error.message}`);
+        else syncResults.questions = db.questions.length;
+      }
+
+      if (Array.isArray(db.exam_results) && db.exam_results.length > 0) {
+        const { error } = await supabase.from('exam_results').upsert(db.exam_results);
+        if (error) errors.push(`Exam Results: ${error.message}`);
+        else syncResults.exam_results = db.exam_results.length;
+      }
+
+      if (Array.isArray(db.cheat_logs) && db.cheat_logs.length > 0) {
+        const { error } = await supabase.from('cheat_logs').upsert(db.cheat_logs);
+        if (error) errors.push(`Cheat Logs: ${error.message}`);
+        else syncResults.cheat_logs = db.cheat_logs.length;
+      }
+
+      if (errors.length > 0) {
+        return res.status(200).json({
+          success: false,
+          partialSync: true,
+          syncResults,
+          message: 'ซิงค์ข้อมูลบางส่วนได้แล้ว แต่บางตารางติดปัญหา Supabase Schema / RLS',
+          errors
+        });
+      }
+
+      res.json({
+        success: true,
+        message: 'ซิงค์ข้อมูลทั้งหมดจาก Local ขึ้น Cloud Supabase สำเร็จเรียบร้อย!',
+        syncResults
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: 'เกิดข้อผิดพลาดในการซิงค์ขึ้น คลาวด์: ' + err.message });
     }
   });
 

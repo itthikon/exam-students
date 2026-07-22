@@ -6,7 +6,7 @@ import {
   Clock, Settings, Search, Filter, Users, Menu, Maximize, Minimize, CheckSquare,
   Brain, TrendingUp, Radio, Tv, Activity, Bell, Send, MessageSquare, Megaphone,
   MessageCircle, Download, UploadCloud, Globe, Heart, Pin, Volume2, ShieldAlert, Eye,
-  HelpCircle, MessageCircleQuestion, X, Info
+  HelpCircle, MessageCircleQuestion, X, Info, Cloud
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
@@ -515,6 +515,7 @@ export default function App() {
   const [showDbStatusModal, setShowDbStatusModal] = useState(false);
   const [isTestingDb, setIsTestingDb] = useState(false);
   const [isSeedingDb, setIsSeedingDb] = useState(false);
+  const [isSyncingCloud, setIsSyncingCloud] = useState(false);
 
   const handleTestDbConnection = async () => {
     setIsTestingDb(true);
@@ -531,6 +532,26 @@ export default function App() {
       showToast('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์', 'error');
     } finally {
       setIsTestingDb(false);
+    }
+  };
+
+  const handleSyncLocalToCloud = async () => {
+    if (!window.confirm('คุณต้องการส่งข้อมูลทั้งหมดในเครื่อง (นักเรียน, รายวิชา, ชุดข้อสอบ, ผลสอบ) ขึ้นไปยัง Cloud Supabase ใช่หรือไม่?')) return;
+    setIsSyncingCloud(true);
+    try {
+      const res = await fetch('/api/db-sync-to-cloud', { method: 'POST' });
+      const data = await res.json();
+      if (res.ok) {
+        showToast(data.message || 'ซิงค์ข้อมูลขึ้น Cloud Supabase เรียบร้อยแล้ว!', 'success');
+        await handleTestDbConnection();
+        await refreshData();
+      } else {
+        showToast(data.error || 'ไม่สามารถซิงค์ขึ้น Cloud ได้', 'error');
+      }
+    } catch (e) {
+      showToast('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์', 'error');
+    } finally {
+      setIsSyncingCloud(false);
     }
   };
 
@@ -1191,7 +1212,14 @@ export default function App() {
         });
 
         if (res.ok) {
-          showToast(`นำเข้ารายชื่อนักเรียนสำเร็จทั้งหมด ${parsedStudents.length} คน (ห้องเรียนเริ่มต้น: ${defaultClassGroup})`);
+          const resData = await res.json();
+          if (resData.savedToCloud) {
+            showToast(`นำเข้ารายชื่อนักเรียนสำเร็จ ${parsedStudents.length} คน บันทึกลง Cloud Supabase และ Local DB เรียบร้อยแล้ว`, 'success');
+          } else if (resData.cloudError) {
+            showToast(`นำเข้ารายชื่อสำเร็จ ${parsedStudents.length} คน (บันทึกใน Local DB แล้ว แต่ Cloud แจ้งเตือน: ${resData.cloudError})`, 'warning');
+          } else {
+            showToast(`นำเข้ารายชื่อนักเรียนสำเร็จ ${parsedStudents.length} คน (บันทึกใน Local DB ปลอดภัยแล้ว)`, 'success');
+          }
           refreshData();
         } else {
           showToast('เกิดข้อผิดพลาดในการบันทึกรายชื่อ', 'error');
@@ -5916,13 +5944,14 @@ CREATE TABLE cheat_logs (
               </button>
             </div>
 
-            {/* Info Notice about Data Retention */}
-            <div className="bg-blue-500/10 border border-blue-500/20 rounded-2xl p-4 flex gap-3 text-xs text-blue-200">
-              <Info className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />
-              <div className="space-y-1">
-                <p className="font-bold text-blue-300">สาเหตุที่ข้อมูลในหน้าระบบอาจดูว่างเปล่าหรือหายไป:</p>
+            {/* Info Notice about Data Retention & Cloud Sync */}
+            <div className="bg-cyan-950/40 border border-cyan-800/60 rounded-2xl p-4 flex gap-3 text-xs text-cyan-200">
+              <Info className="w-5 h-5 text-cyan-400 shrink-0 mt-0.5" />
+              <div className="space-y-1.5">
+                <p className="font-bold text-cyan-300">ความแตกต่างระหว่าง Local DB และ Cloud Supabase DB:</p>
                 <p className="text-slate-300 leading-relaxed">
-                  เมื่อระบบสลับใช้ <b>Cloud Supabase PostgreSQL</b> หรือเมื่อเริ่มต้นเซิร์ฟเวอร์ใหม่ ตารางในคลาวด์อาจยังไม่มีข้อมูลเริ่มต้น หากข้อมูลในตารางเป็น 0 คุณสามารถกดปุ่ม <b className="text-emerald-400">"โหลดข้อมูลเริ่มต้น (Seed Data)"</b> ด้านล่างนี้เพื่อเติมรายชื่อนักเรียน รายวิชา และชุดข้อสอบตัวอย่างลงฐานข้อมูลได้ทันทีโดยข้อมูลเดิมจะไม่สูญหาย
+                  • <b>สถานะปัจจุบัน (Local DB):</b> ข้อมูลนักเรียนทั้งหมด ({students.length} คน) ถูกบันทึกไว้ในระบบ Local JSON File Storage บนเซิร์ฟเวอร์เรียบร้อยแล้ว ไม่สูญหาย<br />
+                  • <b>การส่งข้อมูลไป Cloud DB:</b> เมื่อตั้งค่าคีย์ <code>SUPABASE_SECRET_KEY</code> หรือ <code>SUPABASE_PUBLISHABLE_KEY</code> ใน <code>.env</code> คุณสามารถกดปุ่ม <b className="text-cyan-300">"ซิงค์ข้อมูล Local ขึ้น Cloud"</b> เพื่อส่งข้อมูลทั้งหมด (รายชื่อนักเรียน, รายวิชา, ข้อสอบ) ขึ้นไปยัง Cloud Supabase ได้ทันที!
                 </p>
               </div>
             </div>
@@ -5996,14 +6025,24 @@ CREATE TABLE cheat_logs (
                 <span>{isTestingDb ? 'กำลังทดสอบ...' : 'ทดสอบการเชื่อมต่อใหม่'}</span>
               </button>
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <button 
+                  onClick={handleSyncLocalToCloud}
+                  disabled={isSyncingCloud}
+                  className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold rounded-xl flex items-center gap-2 cursor-pointer shadow-lg shadow-cyan-600/20 transition-all"
+                  title="ส่งข้อมูลทั้งหมดจาก Local DB ขึ้นไปยัง Cloud Supabase"
+                >
+                  <Cloud className={`w-3.5 h-3.5 ${isSyncingCloud ? 'animate-bounce' : ''}`} />
+                  <span>{isSyncingCloud ? 'กำลังซิงค์ขึ้น Cloud...' : 'ซิงค์ Local ขึ้น Cloud'}</span>
+                </button>
+
                 <button 
                   onClick={() => handleSeedDefaultDb(false)}
                   disabled={isSeedingDb}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl flex items-center gap-2 cursor-pointer shadow-lg shadow-emerald-600/20 transition-all"
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl flex items-center gap-2 cursor-pointer shadow-lg shadow-emerald-600/20 transition-all"
                 >
                   <Database className="w-3.5 h-3.5" />
-                  <span>{isSeedingDb ? 'กำลังโหลด...' : 'โหลดข้อมูลเริ่มต้น (Seed Data)'}</span>
+                  <span>{isSeedingDb ? 'กำลังโหลด...' : 'โหลดข้อมูลเริ่มต้น'}</span>
                 </button>
 
                 <button 
