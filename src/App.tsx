@@ -6,7 +6,7 @@ import {
   Clock, Settings, Search, Filter, Users, Menu, Maximize, Minimize, CheckSquare,
   Brain, TrendingUp, Radio, Tv, Activity, Bell, Send, MessageSquare, Megaphone,
   MessageCircle, Download, UploadCloud, Globe, Heart, Pin, Volume2, ShieldAlert, Eye,
-  HelpCircle, MessageCircleQuestion
+  HelpCircle, MessageCircleQuestion, X, Info
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
@@ -508,6 +508,52 @@ export default function App() {
       } else {
         showToast('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์หลักได้ กรุณาลองใหม่อีกครั้ง', 'error');
       }
+    }
+  };
+
+  // Database Connection Indicator & Health Modal States
+  const [showDbStatusModal, setShowDbStatusModal] = useState(false);
+  const [isTestingDb, setIsTestingDb] = useState(false);
+  const [isSeedingDb, setIsSeedingDb] = useState(false);
+
+  const handleTestDbConnection = async () => {
+    setIsTestingDb(true);
+    try {
+      const dbRes = await fetch('/api/db-status');
+      if (dbRes.ok) {
+        const data = await dbRes.json();
+        setDbStatus(data);
+        showToast(`ทดสอบการเชื่อมต่อเรียบร้อย (${data.latencyMs || 0}ms)`, 'success');
+      } else {
+        showToast('ไม่สามารถทดสอบการเชื่อมต่อฐานข้อมูลได้', 'error');
+      }
+    } catch (e) {
+      showToast('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์', 'error');
+    } finally {
+      setIsTestingDb(false);
+    }
+  };
+
+  const handleSeedDefaultDb = async (forceReset = false) => {
+    if (!window.confirm(forceReset ? 'คุณต้องการรีเซ็ตและโหลดข้อมูลเริ่มต้นใหม่ทั้งหมดใช่หรือไม่?' : 'คุณต้องการโหลดข้อมูลเริ่มต้นลงฐานข้อมูลใช่หรือไม่?')) return;
+    setIsSeedingDb(true);
+    try {
+      const res = await fetch('/api/db-seed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ forceReset })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast(data.message || 'โหลดข้อมูลเริ่มต้นเรียบร้อยแล้ว', 'success');
+        await refreshData();
+      } else {
+        showToast(data.error || 'ไม่สามารถโหลดข้อมูลได้', 'error');
+      }
+    } catch (e) {
+      showToast('เกิดข้อผิดพลาดในการเชื่อมต่อ', 'error');
+    } finally {
+      setIsSeedingDb(false);
     }
   };
 
@@ -1903,9 +1949,45 @@ CREATE TABLE cheat_logs (
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
+          {/* Database Connection Status Light Indicator Button */}
+          <button 
+            onClick={() => {
+              handleTestDbConnection();
+              setShowDbStatusModal(true);
+            }}
+            className="px-3 py-1.5 rounded-xl bg-slate-950/90 border border-slate-800 hover:border-slate-700 hover:bg-slate-900 flex items-center gap-2.5 transition-all cursor-pointer group shadow-inner"
+            title="สถานะการเชื่อมต่อฐานข้อมูล (คลิกเพื่อดูรายละเอียดและจัดการ)"
+          >
+            <div className="relative flex h-2.5 w-2.5 items-center justify-center">
+              {(dbStatus as any).isConnected !== false ? (
+                <>
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                </>
+              ) : (
+                <>
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500"></span>
+                </>
+              )}
+            </div>
+
+            <div className="flex items-center gap-1.5 text-left">
+              <Database className="w-3.5 h-3.5 text-cyan-400 group-hover:text-cyan-300 transition-colors" />
+              <span className="text-[11px] font-bold text-slate-200 group-hover:text-cyan-300 transition-colors hidden sm:inline">
+                {(dbStatus as any).useSupabase ? 'Cloud DB' : 'Local DB'}
+              </span>
+              {(dbStatus as any).latencyMs !== undefined && (
+                <span className="text-[9px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 hidden md:inline">
+                  {(dbStatus as any).latencyMs}ms
+                </span>
+              )}
+            </div>
+          </button>
+
           {userRole !== 'guest' && (
-            <div className="flex items-center gap-3 pl-4 border-l-2 border-black">
+            <div className="flex items-center gap-3 pl-3 border-l-2 border-slate-800">
               <div className="text-right hidden sm:block">
                 <p className="text-sm font-extrabold text-white">{currentUser?.name}</p>
                 <p className="text-[10px] font-bold text-cyan-400 uppercase tracking-widest font-display">{userRole === 'admin' ? 'ผู้ดูแลระบบ (Admin)' : userRole === 'teacher' ? 'คุณครูผู้สอน' : `นักเรียน: ${currentUser?.student_id}`}</p>
@@ -5713,6 +5795,143 @@ CREATE TABLE cheat_logs (
               >
                 รับทราบแล้ว ปิดหน้าต่าง
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Database Connection & Health Modal */}
+      {showDbStatusModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-2xl w-full p-6 space-y-6 shadow-2xl relative overflow-hidden text-left">
+            {/* Top Accent Line */}
+            <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-blue-500 via-cyan-400 to-emerald-400"></div>
+
+            {/* Header */}
+            <div className="flex items-center justify-between pb-4 border-b border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-cyan-500/10 text-cyan-400 rounded-2xl border border-cyan-500/20">
+                  <Database className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <span>สถานะการเชื่อมต่อและสุขภาพฐานข้อมูล</span>
+                    <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border ${dbStatus.isConnected !== false ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' : 'bg-rose-500/10 text-rose-400 border-rose-500/30'}`}>
+                      {dbStatus.isConnected !== false ? '● ONLINE' : '● DISCONNECTED'}
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-400">ตรวจสอบความเร็ว สถานะการบันทึก และจัดการกู้คืนข้อมูลระบบ</p>
+                </div>
+              </div>
+
+              <button 
+                onClick={() => setShowDbStatusModal(false)}
+                className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Info Notice about Data Retention */}
+            <div className="bg-blue-500/10 border border-blue-500/20 rounded-2xl p-4 flex gap-3 text-xs text-blue-200">
+              <Info className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="font-bold text-blue-300">สาเหตุที่ข้อมูลในหน้าระบบอาจดูว่างเปล่าหรือหายไป:</p>
+                <p className="text-slate-300 leading-relaxed">
+                  เมื่อระบบสลับใช้ <b>Cloud Supabase PostgreSQL</b> หรือเมื่อเริ่มต้นเซิร์ฟเวอร์ใหม่ ตารางในคลาวด์อาจยังไม่มีข้อมูลเริ่มต้น หากข้อมูลในตารางเป็น 0 คุณสามารถกดปุ่ม <b className="text-emerald-400">"โหลดข้อมูลเริ่มต้น (Seed Data)"</b> ด้านล่างนี้เพื่อเติมรายชื่อนักเรียน รายวิชา และชุดข้อสอบตัวอย่างลงฐานข้อมูลได้ทันทีโดยข้อมูลเดิมจะไม่สูญหาย
+                </p>
+              </div>
+            </div>
+
+            {/* Details Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="bg-slate-950/60 border border-slate-800/80 rounded-2xl p-4 space-y-2">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">รูปแบบการจัดเก็บข้อมูลปัจจุบัน</p>
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-cyan-400"></span>
+                  <p className="text-sm font-bold text-slate-100">{dbStatus.storageType || 'Local JSON Storage'}</p>
+                </div>
+                {dbStatus.supabaseUrl && (
+                  <p className="text-[10px] text-slate-400 font-mono truncate">Endpoint: {dbStatus.supabaseUrl}</p>
+                )}
+              </div>
+
+              <div className="bg-slate-950/60 border border-slate-800/80 rounded-2xl p-4 space-y-2">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">ความเร็วตอบสนองการเชื่อมต่อ (Latency)</p>
+                <div className="flex items-center gap-2">
+                  <Activity className="w-4 h-4 text-emerald-400 animate-pulse" />
+                  <p className="text-sm font-extrabold text-emerald-400 font-mono">{dbStatus.latencyMs || 0} ms</p>
+                  <span className="text-[10px] text-slate-400">(สถานะปกติ)</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Records Summary */}
+            <div className="space-y-3">
+              <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center justify-between">
+                <span>สรุปจำนวนข้อมูลที่บันทึกในระบบสด</span>
+                <span className="text-[10px] text-cyan-400 font-mono">Real-time DB Counts</span>
+              </h4>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div className="bg-slate-950/40 border border-slate-800 rounded-xl p-3 text-center">
+                  <p className="text-[10px] text-slate-400 uppercase font-bold">นักเรียนในระบบ</p>
+                  <p className="text-lg font-black text-cyan-300">{students.length} คน</p>
+                </div>
+                <div className="bg-slate-950/40 border border-slate-800 rounded-xl p-3 text-center">
+                  <p className="text-[10px] text-slate-400 uppercase font-bold">รายวิชาทั้งหมด</p>
+                  <p className="text-lg font-black text-amber-300">{subjects.length} วิชา</p>
+                </div>
+                <div className="bg-slate-950/40 border border-slate-800 rounded-xl p-3 text-center">
+                  <p className="text-[10px] text-slate-400 uppercase font-bold">ชุดข้อสอบ</p>
+                  <p className="text-lg font-black text-indigo-300">{exams.length} ชุด</p>
+                </div>
+                <div className="bg-slate-950/40 border border-slate-800 rounded-xl p-3 text-center">
+                  <p className="text-[10px] text-slate-400 uppercase font-bold">ผลการสอบที่ส่ง</p>
+                  <p className="text-lg font-black text-emerald-300">{examResults.length} ฉบับ</p>
+                </div>
+                <div className="bg-slate-950/40 border border-slate-800 rounded-xl p-3 text-center">
+                  <p className="text-[10px] text-slate-400 uppercase font-bold">ประวัติสลับจอ</p>
+                  <p className="text-lg font-black text-rose-300">{cheatLogs.length} ครั้ง</p>
+                </div>
+                <div className="bg-slate-950/40 border border-slate-800 rounded-xl p-3 text-center">
+                  <p className="text-[10px] text-slate-400 uppercase font-bold">คุณครู/แอดมิน</p>
+                  <p className="text-lg font-black text-purple-300">{teachers.length} ท่าน</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer Buttons */}
+            <div className="pt-2 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3">
+              <button 
+                onClick={handleTestDbConnection}
+                disabled={isTestingDb}
+                className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl flex items-center gap-2 cursor-pointer transition-all"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 text-cyan-400 ${isTestingDb ? 'animate-spin' : ''}`} />
+                <span>{isTestingDb ? 'กำลังทดสอบ...' : 'ทดสอบการเชื่อมต่อใหม่'}</span>
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={() => handleSeedDefaultDb(false)}
+                  disabled={isSeedingDb}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl flex items-center gap-2 cursor-pointer shadow-lg shadow-emerald-600/20 transition-all"
+                >
+                  <Database className="w-3.5 h-3.5" />
+                  <span>{isSeedingDb ? 'กำลังโหลด...' : 'โหลดข้อมูลเริ่มต้น (Seed Data)'}</span>
+                </button>
+
+                <button 
+                  onClick={() => handleSeedDefaultDb(true)}
+                  disabled={isSeedingDb}
+                  className="px-3 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer transition-all"
+                  title="รีเซ็ตและเติมข้อมูลเริ่มต้นโรงเรียน"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>รีเซ็ตตั้งต้น</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>

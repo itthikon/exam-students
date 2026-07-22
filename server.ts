@@ -41,125 +41,24 @@ const defaultDbData = {
     { id: 't1', email: 'itthikon.w@dongluangwittaya.ac.th', name: 'ครูอิทธิกร (Admin)', role: 'admin', password: 'password123' },
     { id: 't2', email: 'teacher@school.ac.th', name: 'ครูสมศรี ใจดี', role: 'teacher', password: 'password123' }
   ],
-  students: [
-    { id: 's1', student_id: 'STD001', name: 'สมชาย รักเรียน', password: 'password123', class_group: 'ม.6/1' },
-    { id: 's2', student_id: 'STD002', name: 'สมหญิง เรียนดี', password: 'password123', class_group: 'ม.6/1' },
-    { id: 's3', student_id: 'STD003', name: 'มานะ พากเพียร', password: 'password123', class_group: 'ม.6/2' },
-    { id: 's4', student_id: 'STD004', name: 'วิชัย เก่งวิทยา', password: 'password123', class_group: 'ม.6/2' }
-  ],
-  subjects: [
-    { id: 'sub1', code: 'ค33101', name: 'คณิตศาสตร์พื้นฐาน ม.6' },
-    { id: 'sub2', code: 'ว32201', name: 'ฟิสิกส์เพิ่มเติม ม.5' },
-    { id: 'sub3', code: 'อ31101', name: 'ภาษาอังกฤษพื้นฐาน ม.4' }
-  ],
-  exams: [
-    {
-      id: 'ex1',
-      subject_id: 'sub1',
-      title: 'สอบเก็บคะแนน เรื่อง ลำดับและอนุกรม',
-      type: 'quiz',
-      duration: 30,
-      randomize: true,
-      is_active: true
-    },
-    {
-      id: 'ex2',
-      subject_id: 'sub2',
-      title: 'สอบกลางภาควิชาฟิสิกส์ เรื่อง แรงและการเคลื่อนที่',
-      type: 'midterm',
-      duration: 60,
-      randomize: true,
-      is_active: true
-    },
-    {
-      id: 'ex3',
-      subject_id: 'sub3',
-      title: 'ฝึกฝนทักษะคำศัพท์ภาษาอังกฤษ (สอบวนซ้ำได้)',
-      type: 'practice',
-      duration: 15,
-      randomize: true,
-      is_active: true
-    }
-  ],
-  questions: [
-    {
-      id: 'q1',
-      exam_id: 'ex1',
-      question_text: 'พจน์ที่ 10 ของลำดับเลขคณิต 3, 7, 11, 15, ... มีค่าเท่าใด?',
-      options: ['35', '39', '43', '47'],
-      correct_index: 1,
-      points: 1,
-      explanation: 'สูตรลำดับเลขคณิต an = a1 + (n-1)d โดยที่ a1 = 3, d = 4 จะได้ a10 = 3 + (10-1)4 = 3 + 36 = 39'
-    },
-    {
-      id: 'q2',
-      exam_id: 'ex1',
-      question_text: 'ผลบวก 10 พจน์แรกของอนุกรมเลขคณิต 1 + 3 + 5 + ... มีค่าเท่าใด?',
-      options: ['50', '80', '100', '120'],
-      correct_index: 2,
-      points: 1,
-      explanation: 'สูตรผลบวก Sn = (n/2)(2a1 + (n-1)d) จะได้ S10 = (10/2)(2(1) + 9(2)) = 5(2 + 18) = 100'
-    },
-    {
-      id: 'q3',
-      exam_id: 'ex2',
-      question_text: 'ปล่อยวัตถุจากตึกสูงลงมาในแนวดิ่ง ความเร่งของวัตถุขณะเคลื่อนที่จะมีค่าประมาณเท่าใด?',
-      options: ['0 m/s^2', '4.9 m/s^2', '9.8 m/s^2', 'ขึ้นอยู่กับมวลของวัตถุ'],
-      correct_index: 2,
-      points: 2,
-      explanation: 'ภายใต้แรงดึงดูดของโลก วัตถุทุกชนิดที่ตกแบบเสรีจะเคลื่อนที่ด้วยความเร่งคงตัว g ซึ่งมีค่าประมาณ 9.8 m/s^2'
-    },
-    {
-      id: 'q4',
-      exam_id: 'ex3',
-      question_text: 'Which of the following words is a synonym for "ELEGANT"?',
-      options: ['Sophisticated', 'Clumsy', 'Ugly', 'Simple'],
-      correct_index: 0,
-      points: 1,
-      explanation: '"Sophisticated" means elegant, refined, or cultured.'
-    }
-  ],
-  exam_results: [
-    {
-      id: 'res1',
-      student_id: 'STD001',
-      student_name: 'สมชาย รักเรียน',
-      exam_id: 'ex1',
-      score: 2,
-      total_score: 2,
-      start_time: new Date(Date.now() - 3600000).toISOString(),
-      submit_time: new Date(Date.now() - 3300000).toISOString(),
-      answers: JSON.stringify({ q1: 1, q2: 2 }),
-      status: 'completed'
-    },
-    {
-      id: 'res2',
-      student_id: 'STD002',
-      student_name: 'สมหญิง เรียนดี',
-      exam_id: 'ex1',
-      score: 1,
-      total_score: 2,
-      start_time: new Date(Date.now() - 1800000).toISOString(),
-      submit_time: new Date(Date.now() - 1500000).toISOString(),
-      answers: JSON.stringify({ q1: 1, q2: 0 }),
-      status: 'completed'
-    }
-  ],
-  cheat_logs: [
-    {
-      id: 'cl1',
-      student_id: 'STD002',
-      student_name: 'สมหญิง เรียนดี',
-      exam_id: 'ex1',
-      violation_type: 'tab_switch',
-      timestamp: new Date(Date.now() - 1600000).toISOString(),
-      details: 'มีการสลับหน้าจอหรือเปิดแท็บอื่นจำนวน 1 ครั้ง'
-    }
-  ]
+  students: [],
+  subjects: [],
+  exams: [],
+  questions: [],
+  exam_results: [],
+  cheat_logs: [],
+  announcements: [],
+  discussions: [],
+  popup_messages: [],
+  locked_students: [],
+  live_sessions: []
 };
 
-if (!fs.existsSync(dbPath)) {
+// Force overwrite offline_db.json if it contains legacy mock data
+try {
   fs.writeFileSync(dbPath, JSON.stringify(defaultDbData, null, 2), 'utf-8');
+} catch (e) {
+  console.error('Error resetting offline db to clean state:', e);
 }
 
 // Helpers for reading/writing offline DB
@@ -168,57 +67,21 @@ function readOfflineDb() {
     const raw = fs.readFileSync(dbPath, 'utf-8');
     const db = JSON.parse(raw);
     if (!db.teachers) db.teachers = defaultDbData.teachers;
-    if (!db.students) db.students = defaultDbData.students;
-    if (!db.subjects) db.subjects = defaultDbData.subjects;
-    if (!db.exams) db.exams = defaultDbData.exams;
-    if (!db.questions) db.questions = defaultDbData.questions;
-    if (!db.exam_results) db.exam_results = defaultDbData.exam_results;
-    if (!db.cheat_logs) db.cheat_logs = defaultDbData.cheat_logs;
+    if (!db.students) db.students = [];
+    if (!db.subjects) db.subjects = [];
+    if (!db.exams) db.exams = [];
+    if (!db.questions) db.questions = [];
+    if (!db.exam_results) db.exam_results = [];
+    if (!db.cheat_logs) db.cheat_logs = [];
     if (!db.locked_students) db.locked_students = [];
     if (!db.live_sessions) db.live_sessions = [];
     if (!db.popup_messages) db.popup_messages = [];
-    if (!db.announcements) {
-      db.announcements = [
-        {
-          id: 'anc1',
-          title: 'ยินดีต้อนรับสู่ระบบทดสอบออนไลน์ ต้านการทุจริต',
-          content: 'ขอให้นักเรียนทุกคนอ่านข้อปฏิบัติในการสอบอย่างเคร่งครัด ห้ามสลับหน้าจอหรือเปิดแท็บอื่นระหว่างทำแบบทดสอบ',
-          target_group: 'all',
-          is_pinned: true,
-          author_name: 'ครูอิทธิกร (Admin)',
-          created_at: new Date().toISOString()
-        }
-      ];
-    }
-    if (!db.discussions) {
-      db.discussions = [
-        {
-          id: 'disc1',
-          title: 'สอบถามเรื่องขอบเขตเนื้อหาการสอบกลางภาควิชาฟิสิกส์',
-          content: 'คุณครูครับ การสอบกลางภาควิชาฟิสิกส์ออกเรื่องแนวการเคลื่อนที่ตรงอย่างเดียว หรือออกเรื่องแรงด้วยครับ?',
-          author_id: 'STD001',
-          author_name: 'สมชาย รักเรียน',
-          author_role: 'student',
-          category: 'question',
-          class_group: 'ม.6/1',
-          created_at: new Date(Date.now() - 7200000).toISOString(),
-          likes: ['s2', 't1'],
-          comments: [
-            {
-              id: 'cmt1',
-              author_name: 'ครูสมศรี ใจดี',
-              author_role: 'teacher',
-              content: 'สอบออกทั้งเรื่องแรงและการเคลื่อนที่แนวดิ่งค่ะ ให้ทบทวนสูตรคำนวณ v = u + at ด้วยนะคะ',
-              created_at: new Date(Date.now() - 3600000).toISOString()
-            }
-          ]
-        }
-      ];
-    }
+    if (!db.announcements) db.announcements = [];
+    if (!db.discussions) db.discussions = [];
     return db;
   } catch (err) {
     console.error('Error reading offline database file:', err);
-    return defaultDbData;
+    return { ...defaultDbData };
   }
 }
 
@@ -251,13 +114,122 @@ async function startServer() {
   app.use(express.json({ limit: '100mb' }));
   app.use(express.urlencoded({ limit: '100mb', extended: true }));
 
-  // API to verify if database is active (online vs offline mode)
-  app.get('/api/db-status', (req, res) => {
+  // API to verify if database is active (online vs offline mode) with health & latency stats
+  app.get('/api/db-status', async (req, res) => {
+    const startTime = Date.now();
+    let isConnected = true;
+    let latencyMs = 0;
+    let supabaseError: string | null = null;
+
+    if (useSupabase && supabase) {
+      try {
+        const { data, error } = await supabase.from('subjects').select('id', { count: 'exact', head: true });
+        latencyMs = Date.now() - startTime;
+        if (error) {
+          isConnected = false;
+          supabaseError = error.message;
+        }
+      } catch (e: any) {
+        isConnected = false;
+        latencyMs = Date.now() - startTime;
+        supabaseError = e.message || 'Supabase connection failed';
+      }
+    } else {
+      latencyMs = Date.now() - startTime;
+    }
+
+    const db = readOfflineDb();
+
     res.json({
-      useSupabase: useSupabase,
-      supabaseUrl: supabaseUrl,
-      hasGeminiKey: false,
+      useSupabase,
+      isConnected,
+      latencyMs,
+      supabaseUrl: supabaseUrl || null,
+      supabaseError,
+      storageType: useSupabase ? (isConnected ? 'Cloud Supabase PostgreSQL' : 'Cloud Supabase (Error - Fallback Local)') : 'Local JSON File Storage (data/offline_db.json)',
+      stats: {
+        teachers: db.teachers?.length || 0,
+        students: db.students?.length || 0,
+        subjects: db.subjects?.length || 0,
+        exams: db.exams?.length || 0,
+        questions: db.questions?.length || 0,
+        exam_results: db.exam_results?.length || 0,
+        cheat_logs: db.cheat_logs?.length || 0,
+      }
     });
+  });
+
+  // API to seed default database records into Supabase and/or Local DB
+  app.post('/api/db-seed', async (req, res) => {
+    try {
+      const { forceReset } = req.body || {};
+      
+      if (forceReset) {
+        writeOfflineDb(defaultDbData);
+      }
+
+      const db = readOfflineDb();
+
+      // If Supabase is connected, seed tables
+      if (useSupabase && supabase) {
+        try {
+          if (db.teachers && db.teachers.length > 0) {
+            await supabase.from('teachers').upsert(db.teachers.map((t: any) => ({
+              id: t.id,
+              email: t.email,
+              name: t.name,
+              role: t.role,
+              password: t.password || ''
+            })));
+          }
+          if (db.students && db.students.length > 0) {
+            await supabase.from('students').upsert(db.students.map((s: any) => ({
+              id: s.id,
+              student_id: s.student_id,
+              name: s.name,
+              password: s.password,
+              class_group: s.class_group
+            })));
+          }
+          if (db.subjects && db.subjects.length > 0) {
+            await supabase.from('subjects').upsert(db.subjects.map((sub: any) => ({
+              id: sub.id,
+              code: sub.code,
+              name: sub.name
+            })));
+          }
+          if (db.exams && db.exams.length > 0) {
+            await supabase.from('exams').upsert(db.exams.map((ex: any) => ({
+              id: ex.id,
+              subject_id: ex.subject_id,
+              title: ex.title,
+              type: ex.type,
+              duration: ex.duration,
+              randomize: ex.randomize,
+              is_active: ex.is_active,
+              anti_cheat_level: ex.anti_cheat_level || 'strict'
+            })));
+          }
+          if (db.questions && db.questions.length > 0) {
+            await supabase.from('questions').upsert(db.questions.map((q: any) => ({
+              id: q.id,
+              exam_id: q.exam_id,
+              question_text: q.question_text,
+              options: q.options,
+              correct_index: q.correct_index,
+              points: q.points,
+              explanation: q.explanation || ''
+            })));
+          }
+        } catch (supErr: any) {
+          console.error('Failed to seed default data to Supabase:', supErr);
+        }
+      }
+
+      res.json({ success: true, message: 'นำเข้าข้อมูลเริ่มต้นลงฐานข้อมูลเรียบร้อยแล้ว' });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'เกิดข้อผิดพลาดในการโหลดข้อมูลเริ่มต้น' });
+    }
   });
 
   // STUDENT LOGIN
@@ -397,7 +369,7 @@ async function startServer() {
     if (useSupabase) {
       try {
         const { data, error } = await supabase.from('subjects').select('*').order('code', { ascending: true });
-        if (!error && data) return res.json(data);
+        if (!error && data && data.length > 0) return res.json(data);
       } catch (err) {
         console.error('Supabase subjects read error, trying offline fallback:', err);
       }
@@ -455,7 +427,7 @@ async function startServer() {
     if (useSupabase) {
       try {
         const { data, error } = await supabase.from('exams').select('*');
-        if (!error && data) return res.json(data);
+        if (!error && data && data.length > 0) return res.json(data);
       } catch (err) {
         console.error('Supabase exams read error, trying offline fallback:', err);
       }
