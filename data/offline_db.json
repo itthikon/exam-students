@@ -1,0 +1,29 @@
+{
+  "teachers": [
+    {
+      "id": "t1",
+      "email": "itthikon.w@dongluangwittaya.ac.th",
+      "name": "ครูอิทธิกร (Admin)",
+      "role": "admin",
+      "password": "password123"
+    },
+    {
+      "id": "t2",
+      "email": "teacher@school.ac.th",
+      "name": "ครูสมศรี ใจดี",
+      "role": "teacher",
+      "password": "password123"
+    }
+  ],
+  "students": [],
+  "subjects": [],
+  "exams": [],
+  "questions": [],
+  "exam_results": [],
+  "cheat_logs": [],
+  "announcements": [],
+  "discussions": [],
+  "popup_messages": [],
+  "locked_students": [],
+  "live_sessions": []
+}

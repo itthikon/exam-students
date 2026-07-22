@@ -202,13 +202,21 @@ async function startServer() {
             })));
           }
           if (db.students && db.students.length > 0) {
-            await supabase.from('students').upsert(db.students.map((s: any) => ({
-              id: s.id,
+            const { error: seedErr } = await supabase.from('students').upsert(db.students.map((s: any) => ({
+              id: s.id || ('s_' + s.student_id),
               student_id: s.student_id,
               name: s.name,
               password: s.password,
               class_group: s.class_group
             })));
+            if (seedErr && (seedErr.message?.includes('id') || seedErr.code === 'PGRST204')) {
+              await supabase.from('students').upsert(db.students.map((s: any) => ({
+                student_id: s.student_id,
+                name: s.name,
+                password: s.password,
+                class_group: s.class_group
+              })));
+            }
           }
           if (db.subjects && db.subjects.length > 0) {
             await supabase.from('subjects').upsert(db.subjects.map((sub: any) => ({
@@ -772,8 +780,19 @@ async function startServer() {
 
     if (useSupabase) {
       try {
-        const { data, error } = await supabase.from('students').insert(newStudent).select();
-        if (!error && data) return res.json(data[0]);
+        let { data, error } = await supabase.from('students').insert(newStudent).select();
+        if (error && (error.message?.includes('id') || error.code === 'PGRST204')) {
+          const fallbackStudent = {
+            student_id: student_id.trim(),
+            name: name.trim(),
+            password: password.trim(),
+            class_group: class_group.trim()
+          };
+          const resFallback = await supabase.from('students').insert(fallbackStudent).select();
+          data = resFallback.data;
+          error = resFallback.error;
+        }
+        if (!error && data && data.length > 0) return res.json(data[0]);
       } catch (err) {
         console.error('Supabase single student create error:', err);
       }
@@ -1151,7 +1170,17 @@ async function startServer() {
       }
 
       if (Array.isArray(db.students) && db.students.length > 0) {
-        const { error } = await supabase.from('students').upsert(db.students);
+        let { error } = await supabase.from('students').upsert(db.students);
+        if (error && (error.message?.includes('id') || error.code === 'PGRST204')) {
+          const fallbackStudents = db.students.map((s: any) => ({
+            student_id: s.student_id,
+            name: s.name,
+            password: s.password,
+            class_group: s.class_group
+          }));
+          const fallbackRes = await supabase.from('students').upsert(fallbackStudents);
+          error = fallbackRes.error;
+        }
         if (error) errors.push(`Students: ${error.message}`);
         else syncResults.students = db.students.length;
       }

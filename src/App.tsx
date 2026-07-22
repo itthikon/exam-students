@@ -22,12 +22,16 @@ CREATE TABLE IF NOT EXISTS public.teachers (
 );
 
 CREATE TABLE IF NOT EXISTS public.students (
-    student_id TEXT PRIMARY KEY,
+    id TEXT PRIMARY KEY,
+    student_id TEXT,
     name TEXT,
     password TEXT,
     class_group TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- เพิ่มคอลัมน์ id หากสร้างตารางก่อนหน้านี้ไว้แล้วไม่มี id
+ALTER TABLE public.students ADD COLUMN IF NOT EXISTS id TEXT;
 
 CREATE TABLE IF NOT EXISTS public.subjects (
     id TEXT PRIMARY KEY,
