@@ -3349,6 +3349,558 @@ CREATE TABLE cheat_logs (
                 </div>
               )}
 
+              {/* === SUBPAGE: LIVE EXAM PROCTORING MONITOR === */}
+              {activeTab === 'live_monitor' && (
+                <div className="space-y-6">
+                  {/* Header & Overview */}
+                  <div className="card-3d rounded-3xl p-5 md:p-6 space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div className="flex items-center gap-3">
+                        <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-2xl animate-pulse">
+                          <Activity className="w-6 h-6" />
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-base flex items-center gap-2">
+                            <span>ติดตามสถานะการสอบแบบเรียลไทม์ (Live Exam Proctoring)</span>
+                          </h3>
+                          <p className="text-xs text-slate-400">ตรวจสอบสถานะผู้เข้าสอบ ความก้าวหน้าคำตอบ และการสลับหน้าจอสด ณ ขณะนี้</p>
+                        </div>
+                      </div>
+
+                      <button 
+                        onClick={() => refreshData()}
+                        className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl flex items-center gap-2 self-start sm:self-center cursor-pointer transition-all active:scale-95"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>อัปเดตข้อมูลสด</span>
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
+                      <div className="bg-slate-950/60 border border-slate-900 rounded-2xl p-4 flex items-center gap-3">
+                        <div className="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-xl">
+                          <Users className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-slate-400 uppercase font-bold">นักเรียนกำลังทำข้อสอบ</p>
+                          <p className="text-xl font-black text-emerald-400">{cheatLogs.length > 0 ? liveSessions.length : liveSessions.length || 1} คน</p>
+                        </div>
+                      </div>
+
+                      <div className="bg-slate-950/60 border border-slate-900 rounded-2xl p-4 flex items-center gap-3">
+                        <div className="p-2.5 bg-rose-500/10 text-rose-400 rounded-xl">
+                          <AlertTriangle className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-slate-400 uppercase font-bold">การแจ้งเตือนพฤติกรรม</p>
+                          <p className="text-xl font-black text-rose-400 animate-pulse">{cheatLogs.length} ครั้ง</p>
+                        </div>
+                      </div>
+
+                      <div className="bg-slate-950/60 border border-slate-900 rounded-2xl p-4 flex items-center gap-3">
+                        <div className="p-2.5 bg-indigo-500/10 text-indigo-400 rounded-xl">
+                          <CheckCircle2 className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-slate-400 uppercase font-bold">ส่งข้อสอบเรียบร้อยแล้ว</p>
+                          <p className="text-xl font-black text-indigo-300">{examResults.length} ฉบับ</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Active Students List */}
+                  <div className="card-3d rounded-3xl p-5 md:p-6 space-y-4">
+                    <h4 className="font-bold text-sm text-slate-200 uppercase tracking-wider flex items-center gap-2">
+                      <Shield className="w-4 h-4 text-emerald-400" />
+                      <span>รายการผู้เข้าสอบในระบบเปิด (Active Exam Sessions)</span>
+                    </h4>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-950/80 text-slate-400 font-bold border-b border-slate-800">
+                          <tr>
+                            <th className="p-3">รหัสนักเรียน</th>
+                            <th className="p-3">ชื่อ-นามสกุล</th>
+                            <th className="p-3">ห้องเรียน</th>
+                            <th className="p-3">ชุดข้อสอบ</th>
+                            <th className="p-3 text-center">สถานะนิรภัย</th>
+                            <th className="p-3 text-center">ประวัติสลับจอ</th>
+                            <th className="p-3 text-right">การควบคุมครู</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800/60">
+                          {examResults.length === 0 && cheatLogs.length === 0 ? (
+                            <tr>
+                              <td colSpan={7} className="p-8 text-center text-slate-500 font-medium">
+                                ยังไม่มีนักเรียนเข้าทำข้อสอบสดในขณะนี้ ระบบจะแสดงรายการอัตโนมัติเมื่อนักเรียนเริ่มเปิดข้อสอบ
+                              </td>
+                            </tr>
+                          ) : (
+                            examResults.slice(0, 10).map((res, idx) => {
+                              const studCheatCount = cheatLogs.filter(c => c.student_id === res.student_id && c.exam_id === res.exam_id).length;
+                              const examObj = exams.find(e => e.id === res.exam_id);
+                              return (
+                                <tr key={res.id || idx} className="hover:bg-slate-900/40 transition-colors">
+                                  <td className="p-3 font-mono text-slate-300 font-bold">{res.student_id}</td>
+                                  <td className="p-3 font-semibold text-white">{res.student_name}</td>
+                                  <td className="p-3 text-slate-400">{students.find(s => s.student_id === res.student_id)?.class_group || 'ม.4/1'}</td>
+                                  <td className="p-3 text-slate-300 max-w-[180px] truncate">{examObj?.title || 'แบบทดสอบ'}</td>
+                                  <td className="p-3 text-center">
+                                    <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full font-bold text-[10px]">
+                                      ส่งข้อสอบแล้ว
+                                    </span>
+                                  </td>
+                                  <td className="p-3 text-center">
+                                    {studCheatCount > 0 ? (
+                                      <span className="px-2 py-0.5 bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-full font-bold text-[10px]">
+                                        สลับจอ {studCheatCount} ครั้ง
+                                      </span>
+                                    ) : (
+                                      <span className="text-slate-500 text-[10px]">ไม่มี</span>
+                                    )}
+                                  </td>
+                                  <td className="p-3 text-right">
+                                    <span className="text-[10px] text-slate-500 italic">สอบเสร็จสมบูรณ์</span>
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* === SUBPAGE: POPUP MESSAGE BROADCAST === */}
+              {activeTab === 'popup_sender' && (
+                <div className="space-y-6">
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                    {/* Send Popup Form (Column 5) */}
+                    <div className="lg:col-span-5 card-3d rounded-3xl p-5 md:p-6 space-y-4">
+                      <div className="flex items-center gap-2.5">
+                        <div className="p-2.5 bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded-xl">
+                          <Bell className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-base">ส่งข้อความแจ้งเตือน Popup สด</h3>
+                          <p className="text-xs text-slate-400">ส่งป๊อบอัพเด้งด่วนขึ้นหน้าจอนักเรียนทันที</p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4 pt-2">
+                        <div>
+                          <label className="block text-xs text-slate-400 mb-1">เป้าหมายผู้รับข้อความ</label>
+                          <select 
+                            value={popupTargetType}
+                            onChange={e => setPopupTargetType(e.target.value as any)}
+                            className="w-full input-3d rounded-xl px-3 py-2 text-xs"
+                          >
+                            <option value="all">นักเรียนทุกคนในระบบ (Broadcast All)</option>
+                            <option value="class">เฉพาะกลุ่มห้องเรียน (เช่น ม.4/1)</option>
+                            <option value="individual">เฉพาะรายบุคคล (ระบุรหัสนักเรียน)</option>
+                          </select>
+                        </div>
+
+                        {popupTargetType !== 'all' && (
+                          <div>
+                            <label className="block text-xs text-slate-400 mb-1">
+                              {popupTargetType === 'class' ? 'ชื่อห้องเรียน (เช่น ม.4/1)' : 'รหัสนักเรียน (เช่น STD001)'}
+                            </label>
+                            <input 
+                              type="text" 
+                              placeholder={popupTargetType === 'class' ? 'เช่น ม.4/1' : 'เช่น STD001'}
+                              value={popupTargetValue}
+                              onChange={e => setPopupTargetValue(e.target.value)}
+                              className="w-full input-3d rounded-xl px-3 py-2 text-xs"
+                            />
+                          </div>
+                        )}
+
+                        <div>
+                          <label className="block text-xs text-slate-400 mb-1">ระดับความสำคัญ</label>
+                          <select 
+                            value={popupImportance}
+                            onChange={e => setPopupImportance(e.target.value as any)}
+                            className="w-full input-3d rounded-xl px-3 py-2 text-xs"
+                          >
+                            <option value="urgent">🔴 แจ้งเตือนด่วนที่สุด (Urgent Alert)</option>
+                            <option value="warning">🟡 เตือนกติกาการสอบ (Rule Warning)</option>
+                            <option value="info">🔵 ข่าวสารประชาสัมพันธ์ทั่วไป (General Info)</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs text-slate-400 mb-1">หัวข้อประกาศ Popup</label>
+                          <input 
+                            type="text" 
+                            placeholder="เช่น แจ้งเตือนเหลือเวลาสอบ 5 นาทีสุดท้าย"
+                            value={popupTitle}
+                            onChange={e => setPopupTitle(e.target.value)}
+                            className="w-full input-3d rounded-xl px-3 py-2 text-xs"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs text-slate-400 mb-1">รายละเอียดข้อความ</label>
+                          <textarea 
+                            rows={4}
+                            placeholder="พิมพ์ข้อความที่ต้องการให้นักเรียนอ่านบนหน้าจอ..."
+                            value={popupBody}
+                            onChange={e => setPopupBody(e.target.value)}
+                            className="w-full input-3d rounded-xl px-3 py-2 text-xs resize-none"
+                          />
+                        </div>
+
+                        <button 
+                          onClick={handleSendPopup}
+                          className="w-full py-2.5 btn-3d-emerald text-xs font-bold rounded-xl flex items-center justify-center gap-2 cursor-pointer shadow-lg"
+                        >
+                          <Send className="w-4 h-4" />
+                          <span>ส่งข้อความ Popup ไปยังหน้าจอนักเรียน</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* History of Sent Popups (Column 7) */}
+                    <div className="lg:col-span-7 card-3d rounded-3xl p-5 md:p-6 space-y-4">
+                      <h4 className="font-bold text-sm text-slate-200 uppercase tracking-wider flex items-center gap-2">
+                        <Megaphone className="w-4 h-4 text-amber-400" />
+                        <span>ประวัติการส่งข้อความ Popup ({sentPopups.length} รายการ)</span>
+                      </h4>
+
+                      <div className="space-y-3 max-h-[450px] overflow-y-auto pr-1">
+                        {sentPopups.length === 0 ? (
+                          <div className="text-center py-12 text-slate-500 text-xs border border-dashed border-slate-800 rounded-2xl bg-slate-950/20">
+                            ยังไม่มีประวัติการส่งข้อความ Popup กรอกข้อมูลทางด้านซ้ายเพื่อทดลองส่ง
+                          </div>
+                        ) : (
+                          sentPopups.map(msg => (
+                            <div key={msg.id} className="bg-slate-950/60 border border-slate-900 rounded-2xl p-4 space-y-2 relative group hover:border-slate-800 transition-all">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                                  msg.importance === 'urgent' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' :
+                                  msg.importance === 'warning' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' :
+                                  'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+                                }`}>
+                                  {msg.importance === 'urgent' ? 'ด่วนที่สุด' : msg.importance === 'warning' ? 'เตือนกติกา' : 'ประชาสัมพันธ์'}
+                                </span>
+                                <span className="text-[10px] text-slate-500 font-mono">
+                                  {new Date(msg.created_at).toLocaleString()}
+                                </span>
+                              </div>
+
+                              <h5 className="font-bold text-sm text-slate-100">{msg.title}</h5>
+                              <p className="text-xs text-slate-300 leading-relaxed">{msg.body}</p>
+
+                              <div className="flex items-center justify-between pt-2 text-[10px] text-slate-500 border-t border-slate-900">
+                                <span>เป้าหมาย: <b>{msg.target_type === 'all' ? 'ทุกคน' : msg.target_value}</b></span>
+                                <button 
+                                  onClick={() => handleDeletePopup(msg.id)}
+                                  className="text-rose-400 hover:text-rose-300 font-bold cursor-pointer"
+                                >
+                                  ลบรายการ
+                                </button>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* === SUBPAGE: ANNOUNCEMENTS & DISCUSSION FORUM === */}
+              {activeTab === 'announcements' && (
+                <div className="space-y-6">
+                  {/* Announcements Section */}
+                  <div className="card-3d rounded-3xl p-5 md:p-6 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-bold text-base flex items-center gap-2">
+                        <Megaphone className="w-5 h-5 text-indigo-400" />
+                        <span>ประกาศข่าวสารทางการจากครูผู้สอน</span>
+                      </h3>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-2">
+                      {/* Create Announcement Form */}
+                      <div className="md:col-span-1 space-y-3 bg-slate-950/40 p-4 border border-slate-800/60 rounded-2xl">
+                        <h4 className="font-bold text-xs text-indigo-400 uppercase tracking-wider">สร้างประกาศใหม่</h4>
+                        <div>
+                          <label className="block text-[10px] text-slate-400 mb-1">หัวข้อประกาศ</label>
+                          <input 
+                            type="text"
+                            placeholder="เช่น กำหนดการสอบกลางภาค ภาคเรียนที่ 1"
+                            value={newAncTitle}
+                            onChange={e => setNewAncTitle(e.target.value)}
+                            className="w-full input-3d rounded-xl px-3 py-2 text-xs"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] text-slate-400 mb-1">เนื้อหาประกาศ</label>
+                          <textarea 
+                            rows={3}
+                            placeholder="พิมพ์รายละเอียดประกาศข่าวสาร..."
+                            value={newAncContent}
+                            onChange={e => setNewAncContent(e.target.value)}
+                            className="w-full input-3d rounded-xl px-3 py-2 text-xs resize-none"
+                          />
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs text-slate-300 flex items-center gap-2 cursor-pointer">
+                            <input 
+                              type="checkbox" 
+                              checked={newAncIsPinned}
+                              onChange={e => setNewAncIsPinned(e.target.checked)}
+                              className="rounded border-slate-800 text-indigo-500 focus:ring-0"
+                            />
+                            <span>ปักหมุดไว้บนสุด</span>
+                          </label>
+                          <button 
+                            onClick={handleCreateAnnouncement}
+                            className="py-2 px-4 btn-3d-emerald text-xs font-bold rounded-xl cursor-pointer"
+                          >
+                            เผยแพร่ประกาศ
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Announcement Feed */}
+                      <div className="md:col-span-2 space-y-3">
+                        <h4 className="font-bold text-xs text-slate-400 uppercase tracking-wider">ประกาศทั้งหมด ({announcements.length} รายการ)</h4>
+                        <div className="max-h-[300px] overflow-y-auto pr-1 space-y-3">
+                          {announcements.length === 0 ? (
+                            <div className="text-center py-8 text-slate-500 text-xs border border-dashed border-slate-800 rounded-xl bg-slate-950/20">
+                              ยังไม่มีประกาศข่าวสารในขณะนี้
+                            </div>
+                          ) : (
+                            announcements.map(anc => (
+                              <div key={anc.id} className="bg-slate-950/60 border border-slate-900 rounded-xl p-4 space-y-2 relative">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    {anc.is_pinned && (
+                                      <span className="px-2 py-0.5 bg-indigo-500/20 text-indigo-300 text-[10px] font-bold rounded-full border border-indigo-500/30">
+                                        📌 ปักหมุด
+                                      </span>
+                                    )}
+                                    <span className="text-xs font-bold text-slate-200">{anc.title}</span>
+                                  </div>
+                                  <button 
+                                    onClick={() => handleDeleteAnnouncement(anc.id)}
+                                    className="text-rose-400 hover:text-rose-300 p-1 cursor-pointer"
+                                    title="ลบประกาศ"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                                <p className="text-xs text-slate-300 leading-relaxed">{anc.content}</p>
+                                <p className="text-[10px] text-slate-500 font-mono">
+                                  โดย {anc.author_name} • {new Date(anc.created_at).toLocaleString()}
+                                </p>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Discussion Forum Board */}
+                  <div className="card-3d rounded-3xl p-5 md:p-6 space-y-4">
+                    <h3 className="font-bold text-base flex items-center gap-2">
+                      <Sparkles className="w-5 h-5 text-amber-400" />
+                      <span>กระดานสนทนาถาม-ตอบบทเรียน (Q&A Forum)</span>
+                    </h3>
+
+                    {/* New Post Box */}
+                    <div className="bg-slate-950/40 border border-slate-800 p-4 rounded-2xl space-y-3">
+                      <h4 className="font-bold text-xs text-amber-400 uppercase tracking-wider">โพสต์ตั้งคำถาม / ข้อเสนอแนะใหม่</h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <input 
+                          type="text" 
+                          placeholder="หัวข้อกระทู้..."
+                          value={newDiscTitle}
+                          onChange={e => setNewDiscTitle(e.target.value)}
+                          className="sm:col-span-2 input-3d rounded-xl px-3 py-2 text-xs"
+                        />
+                        <select 
+                          value={newDiscCategory}
+                          onChange={e => setNewDiscCategory(e.target.value as any)}
+                          className="input-3d rounded-xl px-3 py-2 text-xs"
+                        >
+                          <option value="question">❓ คำถามบทเรียน/ข้อสอบ</option>
+                          <option value="suggestion">💡 ข้อเสนอแนะ</option>
+                          <option value="general">💬 พูดคุยทั่วไป</option>
+                        </select>
+                      </div>
+                      <textarea 
+                        rows={2}
+                        placeholder="พิมพ์เนื้อหาที่ต้องการพูดคุยหรือสอบถาม..."
+                        value={newDiscContent}
+                        onChange={e => setNewDiscContent(e.target.value)}
+                        className="w-full input-3d rounded-xl px-3 py-2 text-xs resize-none"
+                      />
+                      <div className="flex justify-end">
+                        <button 
+                          onClick={handleCreateDiscussion}
+                          className="px-5 py-2 btn-3d-emerald text-xs font-bold rounded-xl cursor-pointer"
+                        >
+                          ตั้งกระทู้สนทนา
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Forum Thread List */}
+                    <div className="space-y-4 pt-2">
+                      {discussions.length === 0 ? (
+                        <div className="text-center py-12 text-slate-500 text-xs border border-dashed border-slate-800 rounded-2xl bg-slate-950/20">
+                          ยังไม่มีกระทู้สนทนา เริ่มต้นตั้งกระทู้แรกได้เลยทางด้านบน
+                        </div>
+                      ) : (
+                        discussions.map(disc => (
+                          <div key={disc.id} className="bg-slate-950/60 border border-slate-900 rounded-2xl p-4 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                  disc.category === 'question' ? 'bg-amber-500/20 text-amber-300' :
+                                  disc.category === 'suggestion' ? 'bg-emerald-500/20 text-emerald-300' :
+                                  'bg-blue-500/20 text-blue-300'
+                                }`}>
+                                  {disc.category === 'question' ? 'คำถาม' : disc.category === 'suggestion' ? 'ข้อเสนอแนะ' : 'ทั่วไป'}
+                                </span>
+                                <h5 className="font-bold text-sm text-slate-100">{disc.title}</h5>
+                              </div>
+                              <button 
+                                onClick={() => handleDeleteDiscussion(disc.id)}
+                                className="text-rose-400 hover:text-rose-300 text-xs cursor-pointer"
+                              >
+                                ลบกระทู้
+                              </button>
+                            </div>
+
+                            <p className="text-xs text-slate-300 leading-relaxed">{disc.content}</p>
+
+                            <div className="flex items-center justify-between text-[10px] text-slate-500 pt-2 border-t border-slate-900">
+                              <span>โดย <b className="text-slate-300">{disc.author_name}</b> ({disc.author_role === 'teacher' ? 'ครูผู้สอน' : 'นักเรียน'}) • {new Date(disc.created_at).toLocaleString()}</span>
+                              <button 
+                                onClick={() => handleLikeDiscussion(disc.id)}
+                                className="flex items-center gap-1 text-rose-400 hover:text-rose-300 font-bold cursor-pointer"
+                              >
+                                ❤️ ถูกใจ ({disc.likes || 0})
+                              </button>
+                            </div>
+
+                            {/* Comments list */}
+                            {disc.comments && disc.comments.length > 0 && (
+                              <div className="pl-4 border-l-2 border-slate-800 space-y-2 pt-2">
+                                {disc.comments.map((c: any, cIdx: number) => (
+                                  <div key={cIdx} className="bg-slate-900/60 p-2.5 rounded-xl text-xs space-y-1">
+                                    <div className="flex justify-between text-[10px] text-slate-400">
+                                      <span className="font-bold text-slate-200">{c.author_name} ({c.author_role === 'teacher' ? 'ครูผู้สอน' : 'นักเรียน'})</span>
+                                      <span>{new Date(c.created_at).toLocaleTimeString()}</span>
+                                    </div>
+                                    <p className="text-slate-300">{c.content}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* Comment Input */}
+                            <div className="flex gap-2 pt-1">
+                              <input 
+                                type="text"
+                                placeholder="เขียนความคิดเห็นตอบกลับ..."
+                                value={commentInputs[disc.id] || ''}
+                                onChange={e => setCommentInputs({ ...commentInputs, [disc.id]: e.target.value })}
+                                className="flex-1 input-3d rounded-xl px-3 py-1.5 text-xs"
+                                onKeyDown={e => e.key === 'Enter' && handleAddDiscussionComment(disc.id)}
+                              />
+                              <button 
+                                onClick={() => handleAddDiscussionComment(disc.id)}
+                                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl text-xs cursor-pointer"
+                              >
+                                ตอบกลับ
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* === SUBPAGE: DATABASE BACKUP & RESTORE === */}
+              {activeTab === 'backup' && (
+                <div className="space-y-6">
+                  <div className="card-3d rounded-3xl p-5 md:p-6 space-y-4">
+                    <div className="flex items-center gap-3">
+                      <div className="p-3 bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 rounded-2xl">
+                        <Database className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-base">การสำรองข้อมูล และ คืนค่าฐานข้อมูล (Backup & Restore)</h3>
+                        <p className="text-xs text-slate-400">จัดการส่งออกหรือนำเข้าฐานข้อมูลระบบข้อสอบ รายวิชา รายชื่อนักเรียน และผลคะแนนทั้งหมด</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
+                      {/* Export Card */}
+                      <div className="bg-slate-950/60 border border-slate-800 rounded-2xl p-6 space-y-4 flex flex-col justify-between">
+                        <div className="space-y-2">
+                          <h4 className="font-bold text-sm text-cyan-400 flex items-center gap-2">
+                            <Download className="w-4 h-4" />
+                            <span>1. สำรองข้อมูลระบบ (Export Database)</span>
+                          </h4>
+                          <p className="text-xs text-slate-400 leading-relaxed">
+                            ดาวน์โหลดไฟล์โครงสร้างฐานข้อมูลเต็มรูปแบบ (.json) เก็บไว้ในเครื่องคอมพิวเตอร์ของคุณ เพื่อป้องกันข้อมูลสูญหาย
+                          </p>
+                        </div>
+
+                        <button 
+                          onClick={handleDownloadBackup}
+                          className="w-full py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 cursor-pointer shadow-lg transition-all"
+                        >
+                          <Download className="w-4 h-4" />
+                          <span>ดาวน์โหลดไฟล์สำรองข้อมูล (.json)</span>
+                        </button>
+                      </div>
+
+                      {/* Restore Card */}
+                      <div className="bg-slate-950/60 border border-slate-800 rounded-2xl p-6 space-y-4 flex flex-col justify-between">
+                        <div className="space-y-2">
+                          <h4 className="font-bold text-sm text-emerald-400 flex items-center gap-2">
+                            <Upload className="w-4 h-4" />
+                            <span>2. คืนค่าฐานข้อมูล (Restore Database)</span>
+                          </h4>
+                          <p className="text-xs text-slate-400 leading-relaxed">
+                            เลือกไฟล์สำรองข้อมูล (.json) จากเครื่องของคุณเพื่อนำกลับมาใช้งานในระบบ
+                          </p>
+                        </div>
+
+                        <div className="relative border-2 border-dashed border-slate-800 hover:border-emerald-500/50 rounded-xl p-4 text-center cursor-pointer bg-slate-900/40 transition-all">
+                          <input 
+                            type="file" 
+                            accept=".json"
+                            onChange={handleRestoreBackupFile}
+                            disabled={isRestoringBackup}
+                            className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                          />
+                          {isRestoringBackup ? (
+                            <p className="text-xs font-bold text-emerald-400 animate-pulse">กำลังนำคืนข้อมูลฐานข้อมูล...</p>
+                          ) : (
+                            <p className="text-xs font-semibold text-slate-300">คลิกที่นี่เพื่อเลือกไฟล์สำรองข้อมูล (.json) เพื่อนำคืน</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* === SUBPAGE: SUBJECTS & EXAMS MANAGEMENT === */}
               {activeTab === 'subjects' && (
                 <div className="space-y-6">
@@ -4987,6 +5539,43 @@ CREATE TABLE cheat_logs (
                 className="px-5 py-2 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl text-xs cursor-pointer"
               >
                 เข้าใจแล้ว ปิดหน้าต่างนี้
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Student Live Popup Alert Modal */}
+      {currentStudentPopupModal && (
+        <div className="fixed inset-0 z-[120] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 md:p-8 max-w-lg w-full shadow-2xl relative overflow-hidden space-y-6 text-left">
+            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border ${
+              currentStudentPopupModal.importance === 'urgent' ? 'bg-rose-500/10 border-rose-500/20 text-rose-400' :
+              currentStudentPopupModal.importance === 'warning' ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' :
+              'bg-blue-500/10 border-blue-500/20 text-blue-400'
+            }`}>
+              <Bell className="w-8 h-8 animate-bounce" />
+            </div>
+
+            <div className="space-y-2">
+              <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase ${
+                currentStudentPopupModal.importance === 'urgent' ? 'bg-rose-500/20 text-rose-300' :
+                currentStudentPopupModal.importance === 'warning' ? 'bg-amber-500/20 text-amber-300' :
+                'bg-blue-500/20 text-blue-300'
+              }`}>
+                {currentStudentPopupModal.importance === 'urgent' ? '🔴 ประกาศด่วนพิเศษ' : currentStudentPopupModal.importance === 'warning' ? '🟡 แจ้งเตือนกติกา' : '🔵 ประชาสัมพันธ์'}
+              </span>
+              <h3 className="text-xl font-bold text-white pt-1">{currentStudentPopupModal.title}</h3>
+              <p className="text-sm text-slate-300 leading-relaxed whitespace-pre-wrap">{currentStudentPopupModal.body}</p>
+            </div>
+
+            <div className="pt-2 flex items-center justify-between border-t border-slate-800/80 text-xs text-slate-400">
+              <span>จาก: <b>{currentStudentPopupModal.sender_name || 'ครูผู้สอน'}</b></span>
+              <button
+                onClick={() => handleAcknowledgePopup(currentStudentPopupModal.id)}
+                className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs shadow cursor-pointer transition-all active:scale-95"
+              >
+                รับทราบแล้ว ปิดหน้าต่าง
               </button>
             </div>
           </div>
