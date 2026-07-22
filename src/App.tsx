@@ -272,6 +272,11 @@ export default function App() {
   const [scoreDashboardExamFilter, setScoreDashboardExamFilter] = useState('');
   const [scoreDashboardSearch, setScoreDashboardSearch] = useState('');
 
+  // Live Exam Proctoring Monitor Filters
+  const [liveMonitorSearch, setLiveMonitorSearch] = useState('');
+  const [liveMonitorClassFilter, setLiveMonitorClassFilter] = useState('');
+  const [liveMonitorStatusFilter, setLiveMonitorStatusFilter] = useState<'all' | 'taking' | 'completed' | 'cheated' | 'not_started'>('all');
+
   // Psychometric/CTT analysis states
   const [analysisSelectedExamId, setAnalysisSelectedExamId] = useState<string>('');
   const [analysisSelectedClass, setAnalysisSelectedClass] = useState<string>('');
@@ -3363,7 +3368,7 @@ CREATE TABLE cheat_logs (
                           <h3 className="font-bold text-base flex items-center gap-2">
                             <span>ติดตามสถานะการสอบแบบเรียลไทม์ (Live Exam Proctoring)</span>
                           </h3>
-                          <p className="text-xs text-slate-400">ตรวจสอบสถานะผู้เข้าสอบ ความก้าวหน้าคำตอบ และการสลับหน้าจอสด ณ ขณะนี้</p>
+                          <p className="text-xs text-slate-400">ตรวจสอบสถานะรายชื่อนักเรียน ความก้าวหน้าคำตอบ และการสลับหน้าจอสด ณ ขณะนี้</p>
                         </div>
                       </div>
 
@@ -3376,14 +3381,24 @@ CREATE TABLE cheat_logs (
                       </button>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 pt-2">
                       <div className="bg-slate-950/60 border border-slate-900 rounded-2xl p-4 flex items-center gap-3">
-                        <div className="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-xl">
+                        <div className="p-2.5 bg-blue-500/10 text-blue-400 rounded-xl">
                           <Users className="w-5 h-5" />
                         </div>
                         <div>
-                          <p className="text-[10px] text-slate-400 uppercase font-bold">นักเรียนกำลังทำข้อสอบ</p>
-                          <p className="text-xl font-black text-emerald-400">{cheatLogs.length > 0 ? liveSessions.length : liveSessions.length || 1} คน</p>
+                          <p className="text-[10px] text-slate-400 uppercase font-bold">นักเรียนทั้งหมดในระบบ</p>
+                          <p className="text-xl font-black text-blue-300">{students.length} คน</p>
+                        </div>
+                      </div>
+
+                      <div className="bg-slate-950/60 border border-slate-900 rounded-2xl p-4 flex items-center gap-3">
+                        <div className="p-2.5 bg-amber-500/10 text-amber-400 rounded-xl">
+                          <Activity className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-slate-400 uppercase font-bold">กำลังสอบ ณ ขณะนี้</p>
+                          <p className="text-xl font-black text-amber-400 animate-pulse">{liveSessions.length} คน</p>
                         </div>
                       </div>
 
@@ -3392,29 +3407,68 @@ CREATE TABLE cheat_logs (
                           <AlertTriangle className="w-5 h-5" />
                         </div>
                         <div>
-                          <p className="text-[10px] text-slate-400 uppercase font-bold">การแจ้งเตือนพฤติกรรม</p>
-                          <p className="text-xl font-black text-rose-400 animate-pulse">{cheatLogs.length} ครั้ง</p>
+                          <p className="text-[10px] text-slate-400 uppercase font-bold">การแจ้งเตือนสลับจอ</p>
+                          <p className="text-xl font-black text-rose-400">{cheatLogs.length} ครั้ง</p>
                         </div>
                       </div>
 
                       <div className="bg-slate-950/60 border border-slate-900 rounded-2xl p-4 flex items-center gap-3">
-                        <div className="p-2.5 bg-indigo-500/10 text-indigo-400 rounded-xl">
+                        <div className="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-xl">
                           <CheckCircle2 className="w-5 h-5" />
                         </div>
                         <div>
                           <p className="text-[10px] text-slate-400 uppercase font-bold">ส่งข้อสอบเรียบร้อยแล้ว</p>
-                          <p className="text-xl font-black text-indigo-300">{examResults.length} ฉบับ</p>
+                          <p className="text-xl font-black text-emerald-400">{examResults.length} ฉบับ</p>
                         </div>
                       </div>
                     </div>
                   </div>
 
-                  {/* Active Students List */}
+                  {/* Filter Toolbar & Students List Table */}
                   <div className="card-3d rounded-3xl p-5 md:p-6 space-y-4">
-                    <h4 className="font-bold text-sm text-slate-200 uppercase tracking-wider flex items-center gap-2">
-                      <Shield className="w-4 h-4 text-emerald-400" />
-                      <span>รายการผู้เข้าสอบในระบบเปิด (Active Exam Sessions)</span>
-                    </h4>
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      <h4 className="font-bold text-sm text-slate-200 uppercase tracking-wider flex items-center gap-2">
+                        <Shield className="w-4 h-4 text-emerald-400" />
+                        <span>ติดตามสถานะรายชื่อนักเรียน ({students.length} คน)</span>
+                      </h4>
+
+                      {/* Filters */}
+                      <div className="flex flex-wrap items-center gap-2.5">
+                        <div className="relative min-w-[180px]">
+                          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                          <input 
+                            type="text"
+                            placeholder="ค้นหารหัสนักเรียน/ชื่อ..."
+                            value={liveMonitorSearch}
+                            onChange={e => setLiveMonitorSearch(e.target.value)}
+                            className="w-full input-3d rounded-xl pl-8 pr-3 py-1.5 text-xs"
+                          />
+                        </div>
+
+                        <select 
+                          value={liveMonitorClassFilter}
+                          onChange={e => setLiveMonitorClassFilter(e.target.value)}
+                          className="input-3d rounded-xl px-3 py-1.5 text-xs"
+                        >
+                          <option value="">ทุกห้องเรียน</option>
+                          {Array.from(new Set(students.map(s => s.class_group))).filter(Boolean).sort().map(c => (
+                            <option key={c} value={c}>ห้อง {c}</option>
+                          ))}
+                        </select>
+
+                        <select 
+                          value={liveMonitorStatusFilter}
+                          onChange={e => setLiveMonitorStatusFilter(e.target.value as any)}
+                          className="input-3d rounded-xl px-3 py-1.5 text-xs"
+                        >
+                          <option value="all">ทุกสถานะการสอบ</option>
+                          <option value="taking">🟡 กำลังทำข้อสอบ</option>
+                          <option value="completed">🟢 ส่งข้อสอบแล้ว</option>
+                          <option value="cheated">🔴 พบบันทึกสลับจอ</option>
+                          <option value="not_started">⚪ ยังไม่เข้าสอบ</option>
+                        </select>
+                      </div>
+                    </div>
 
                     <div className="overflow-x-auto">
                       <table className="w-full text-left text-xs">
@@ -3423,49 +3477,131 @@ CREATE TABLE cheat_logs (
                             <th className="p-3">รหัสนักเรียน</th>
                             <th className="p-3">ชื่อ-นามสกุล</th>
                             <th className="p-3">ห้องเรียน</th>
-                            <th className="p-3">ชุดข้อสอบ</th>
-                            <th className="p-3 text-center">สถานะนิรภัย</th>
-                            <th className="p-3 text-center">ประวัติสลับจอ</th>
-                            <th className="p-3 text-right">การควบคุมครู</th>
+                            <th className="p-3">สถานะเรียลไทม์</th>
+                            <th className="p-3">ความก้าวหน้า/ผลคะแนน</th>
+                            <th className="p-3 text-center">สลับจอ (พฤติกรรม)</th>
+                            <th className="p-3 text-right">การควบคุมโดยครู</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-800/60">
-                          {examResults.length === 0 && cheatLogs.length === 0 ? (
+                          {students.length === 0 ? (
                             <tr>
                               <td colSpan={7} className="p-8 text-center text-slate-500 font-medium">
-                                ยังไม่มีนักเรียนเข้าทำข้อสอบสดในขณะนี้ ระบบจะแสดงรายการอัตโนมัติเมื่อนักเรียนเริ่มเปิดข้อสอบ
+                                ยังไม่มีข้อมูลนักเรียนในระบบ คุณสามารถเพิ่มนักเรียนได้ที่เมนู <b>"จัดการรายชื่อนักเรียน"</b>
                               </td>
                             </tr>
                           ) : (
-                            examResults.slice(0, 10).map((res, idx) => {
-                              const studCheatCount = cheatLogs.filter(c => c.student_id === res.student_id && c.exam_id === res.exam_id).length;
-                              const examObj = exams.find(e => e.id === res.exam_id);
-                              return (
-                                <tr key={res.id || idx} className="hover:bg-slate-900/40 transition-colors">
-                                  <td className="p-3 font-mono text-slate-300 font-bold">{res.student_id}</td>
-                                  <td className="p-3 font-semibold text-white">{res.student_name}</td>
-                                  <td className="p-3 text-slate-400">{students.find(s => s.student_id === res.student_id)?.class_group || 'ม.4/1'}</td>
-                                  <td className="p-3 text-slate-300 max-w-[180px] truncate">{examObj?.title || 'แบบทดสอบ'}</td>
-                                  <td className="p-3 text-center">
-                                    <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full font-bold text-[10px]">
-                                      ส่งข้อสอบแล้ว
-                                    </span>
-                                  </td>
-                                  <td className="p-3 text-center">
-                                    {studCheatCount > 0 ? (
-                                      <span className="px-2 py-0.5 bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-full font-bold text-[10px]">
-                                        สลับจอ {studCheatCount} ครั้ง
-                                      </span>
-                                    ) : (
-                                      <span className="text-slate-500 text-[10px]">ไม่มี</span>
-                                    )}
-                                  </td>
-                                  <td className="p-3 text-right">
-                                    <span className="text-[10px] text-slate-500 italic">สอบเสร็จสมบูรณ์</span>
-                                  </td>
-                                </tr>
-                              );
-                            })
+                            students
+                              .filter(student => {
+                                const matchesSearch = !liveMonitorSearch || 
+                                  student.student_id.toLowerCase().includes(liveMonitorSearch.toLowerCase()) || 
+                                  student.name.toLowerCase().includes(liveMonitorSearch.toLowerCase());
+                                
+                                const matchesClass = !liveMonitorClassFilter || student.class_group === liveMonitorClassFilter;
+
+                                const hasResult = examResults.some(r => r.student_id === student.student_id);
+                                const liveSess = liveSessions.find(s => s.student_id === student.student_id);
+                                const studCheatCount = cheatLogs.filter(c => c.student_id === student.student_id).length;
+
+                                let matchesStatus = true;
+                                if (liveMonitorStatusFilter === 'taking') {
+                                  matchesStatus = !!liveSess;
+                                } else if (liveMonitorStatusFilter === 'completed') {
+                                  matchesStatus = hasResult;
+                                } else if (liveMonitorStatusFilter === 'cheated') {
+                                  matchesStatus = studCheatCount > 0;
+                                } else if (liveMonitorStatusFilter === 'not_started') {
+                                  matchesStatus = !hasResult && !liveSess;
+                                }
+
+                                return matchesSearch && matchesClass && matchesStatus;
+                              })
+                              .map((student) => {
+                                const liveSess = liveSessions.find(s => s.student_id === student.student_id);
+                                const resultObj = examResults.find(r => r.student_id === student.student_id);
+                                const studCheatCount = cheatLogs.filter(c => c.student_id === student.student_id).length;
+                                const isLocked = lockedStudents.some(l => l.student_id === student.student_id);
+
+                                return (
+                                  <tr key={student.id} className="hover:bg-slate-900/40 transition-colors">
+                                    <td className="p-3 font-mono text-slate-300 font-bold">{student.student_id}</td>
+                                    <td className="p-3 font-semibold text-white">{student.name}</td>
+                                    <td className="p-3 text-slate-400 font-medium">{student.class_group || 'ม.4/1'}</td>
+                                    <td className="p-3">
+                                      {isLocked ? (
+                                        <span className="px-2.5 py-1 bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-full font-bold text-[10px] flex items-center gap-1 w-fit">
+                                          <Lock className="w-3 h-3" />
+                                          <span>ถูกล็อกหน้าจอ</span>
+                                        </span>
+                                      ) : liveSess ? (
+                                        <span className="px-2.5 py-1 bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-full font-bold text-[10px] flex items-center gap-1 w-fit animate-pulse">
+                                          <Activity className="w-3 h-3" />
+                                          <span>กำลังทำข้อสอบ</span>
+                                        </span>
+                                      ) : resultObj ? (
+                                        <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full font-bold text-[10px] flex items-center gap-1 w-fit">
+                                          <CheckCircle2 className="w-3 h-3" />
+                                          <span>ส่งข้อสอบแล้ว</span>
+                                        </span>
+                                      ) : (
+                                        <span className="px-2.5 py-1 bg-slate-800 text-slate-400 rounded-full font-medium text-[10px] w-fit">
+                                          ยังไม่เข้าสอบ
+                                        </span>
+                                      )}
+                                    </td>
+                                    <td className="p-3 text-slate-300">
+                                      {liveSess ? (
+                                        <div className="space-y-0.5">
+                                          <p className="font-bold text-amber-400 text-[11px]">
+                                            ตอบแล้ว {liveSess.answered_count} / {liveSess.total_questions} ข้อ
+                                          </p>
+                                          <p className="text-[10px] text-slate-400 truncate max-w-[160px]">
+                                            {liveSess.exam_title || 'แบบทดสอบ'}
+                                          </p>
+                                        </div>
+                                      ) : resultObj ? (
+                                        <div className="space-y-0.5">
+                                          <p className="font-bold text-emerald-400 text-[11px]">
+                                            {resultObj.score} / {resultObj.total_score} คะแนน
+                                          </p>
+                                          <p className="text-[10px] text-slate-400">
+                                            {new Date(resultObj.submit_time).toLocaleTimeString()}
+                                          </p>
+                                        </div>
+                                      ) : (
+                                        <span className="text-slate-500 italic text-[11px]">-</span>
+                                      )}
+                                    </td>
+                                    <td className="p-3 text-center">
+                                      {studCheatCount > 0 ? (
+                                        <span className="px-2.5 py-0.5 bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-full font-bold text-[10px] inline-flex items-center gap-1">
+                                          <AlertTriangle className="w-3 h-3" />
+                                          <span>สลับจอ {studCheatCount} ครั้ง</span>
+                                        </span>
+                                      ) : (
+                                        <span className="text-slate-500 text-[10px]">ปกติ (0)</span>
+                                      )}
+                                    </td>
+                                    <td className="p-3 text-right">
+                                      <div className="flex items-center justify-end gap-2">
+                                        <button 
+                                          onClick={() => {
+                                            setPopupTargetType('individual');
+                                            setPopupTargetValue(student.student_id);
+                                            setPopupTitle(`แจ้งเตือนถึง ${student.name}`);
+                                            setActiveTab('popup_sender');
+                                          }}
+                                          className="px-2.5 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-lg font-bold text-[10px] flex items-center gap-1 cursor-pointer transition-all"
+                                          title="ส่งข้อความ Popup ให้คนนี้"
+                                        >
+                                          <Bell className="w-3 h-3" />
+                                          <span>ส่ง Popup</span>
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })
                           )}
                         </tbody>
                       </table>
