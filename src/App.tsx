@@ -11,6 +11,126 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
 
+const SUPABASE_SETUP_SQL = `-- 1. สร้างตารางทั้งหมดสำหรับระบบจัดสอบ
+CREATE TABLE IF NOT EXISTS public.teachers (
+    id TEXT PRIMARY KEY,
+    email TEXT,
+    name TEXT,
+    role TEXT DEFAULT 'teacher',
+    password TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.students (
+    student_id TEXT PRIMARY KEY,
+    name TEXT,
+    password TEXT,
+    class_group TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.subjects (
+    id TEXT PRIMARY KEY,
+    code TEXT,
+    name TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.exams (
+    id TEXT PRIMARY KEY,
+    subject_id TEXT,
+    title TEXT,
+    type TEXT,
+    duration INT DEFAULT 30,
+    randomize BOOLEAN DEFAULT true,
+    is_active BOOLEAN DEFAULT true,
+    anti_cheat_level TEXT DEFAULT 'strict',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.questions (
+    id TEXT PRIMARY KEY,
+    exam_id TEXT,
+    question_text TEXT,
+    options JSONB,
+    correct_index INT DEFAULT 0,
+    points NUMERIC DEFAULT 1,
+    explanation TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.exam_results (
+    id TEXT PRIMARY KEY,
+    student_id TEXT,
+    student_name TEXT,
+    exam_id TEXT,
+    exam_title TEXT,
+    score NUMERIC DEFAULT 0,
+    max_score NUMERIC DEFAULT 0,
+    percentage NUMERIC DEFAULT 0,
+    submitted_at TIMESTAMPTZ DEFAULT NOW(),
+    details JSONB
+);
+
+CREATE TABLE IF NOT EXISTS public.cheat_logs (
+    id TEXT PRIMARY KEY,
+    student_id TEXT,
+    student_name TEXT,
+    exam_id TEXT,
+    reason TEXT,
+    timestamp TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.announcements (
+    id TEXT PRIMARY KEY,
+    title TEXT,
+    body TEXT,
+    author TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.discussions (
+    id TEXT PRIMARY KEY,
+    user_name TEXT,
+    role TEXT,
+    message TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.popup_messages (
+    id TEXT PRIMARY KEY,
+    target_type TEXT,
+    target_value TEXT,
+    title TEXT,
+    body TEXT,
+    sender_name TEXT,
+    importance TEXT DEFAULT 'info',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 2. เปิดใช้งาน RLS และอนุญาตให้เข้าถึงอ่าน/เขียนข้อมูลได้
+ALTER TABLE public.teachers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.students ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.subjects ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.exams ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.questions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.exam_results ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.cheat_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.announcements ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.discussions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.popup_messages ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow public all teachers" ON public.teachers FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow public all students" ON public.students FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow public all subjects" ON public.subjects FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow public all exams" ON public.exams FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow public all questions" ON public.questions FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow public all exam_results" ON public.exam_results FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow public all cheat_logs" ON public.cheat_logs FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow public all announcements" ON public.announcements FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow public all discussions" ON public.discussions FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow public all popup_messages" ON public.popup_messages FOR ALL USING (true) WITH CHECK (true);`;
+
 // Types
 interface Student {
   id: string;
@@ -5955,6 +6075,47 @@ CREATE TABLE cheat_logs (
                 </p>
               </div>
             </div>
+
+            {/* Supabase Table Missing Warning & SQL Copy Helper */}
+            {(dbStatus.tableMissing || dbStatus.supabaseError?.includes('PGRST205') || dbStatus.supabaseError?.includes('schema cache') || dbStatus.supabaseError?.includes('does not exist')) && (
+              <div className="bg-amber-950/50 border border-amber-600/50 rounded-2xl p-4 space-y-3">
+                <div className="flex items-start gap-3">
+                  <ShieldAlert className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                  <div className="space-y-1 text-xs text-amber-200">
+                    <p className="font-extrabold text-amber-300 text-sm">⚠️ พบสาเหตุ: คีย์ Supabase เชื่อมต่อสำเร็จแล้ว แต่ยังไม่ได้สร้างตาราง (Tables)</p>
+                    <p className="text-slate-300 leading-relaxed">
+                      เนื่องจากฐานข้อมูล Supabase โครงการของคุณยังเป็นโครงการใหม่ที่ยังไม่มีตาราง <code>students</code>, <code>teachers</code>, <code>subjects</code>, <code>exams</code> ฯลฯ ทำให้ Supabase ส่งรหัสข้อผิดพลาด <code>PGRST205 (Table Not Found)</code>
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3 text-xs space-y-2">
+                  <p className="font-bold text-cyan-300 flex items-center justify-between">
+                    <span>📌 วิธีสร้างตารางใน Supabase เพียง 1 นาที:</span>
+                    <span className="text-[10px] text-slate-400">SQL Schema Setup</span>
+                  </p>
+                  <ol className="list-decimal list-inside text-slate-300 space-y-1 leading-relaxed pl-1">
+                    <li>ไปที่เว็บไซต์ Supabase Dashboard → เมนู <b>SQL Editor</b></li>
+                    <li>กดปุ่ม <b>New Query</b></li>
+                    <li>กดปุ่ม <b>"คัดลอกคำสั่ง SQL สร้างตาราง"</b> ด้านล่าง แล้วนำไปวาง (Paste)</li>
+                    <li>กดปุ่ม <b>Run</b> สีเขียวใน Supabase แล้วกลับมากด <b>"ซิงค์ Local ขึ้น Cloud"</b> ได้ทันที!</li>
+                  </ol>
+
+                  <div className="pt-2 flex justify-end">
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(SUPABASE_SETUP_SQL);
+                        showToast('คัดลอกคำสั่ง SQL สร้างตารางเรียบร้อยแล้ว! นำไปวางใน Supabase SQL Editor แล้วกด Run ได้เลย', 'success');
+                      }}
+                      className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs rounded-xl flex items-center gap-2 cursor-pointer shadow-lg shadow-amber-500/20 transition-all"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>📋 คัดลอกคำสั่ง SQL สร้างตารางลง Supabase</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Details Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

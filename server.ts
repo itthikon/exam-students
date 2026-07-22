@@ -11,21 +11,25 @@ dotenv.config();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Initialize Supabase Client
-const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://lzzpebrahqwcberfqwfk.supabase.co';
-const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_KEY || '';
-let supabase: any = null;
-let useSupabase = false;
+// Helper function to dynamically initialize Supabase client
+function getSupabase() {
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://lzzpebrahqwcberfqwfk.supabase.co';
+  const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_KEY || '';
 
-if (supabaseUrl && supabaseSecretKey) {
+  if (!url || !key) {
+    return { client: null, useSupabase: false, url, keyPresent: false };
+  }
+
   try {
-    supabase = createClient(supabaseUrl, supabaseSecretKey);
-    useSupabase = true;
-    console.log('Supabase client initialized successfully with URL:', supabaseUrl);
-  } catch (err) {
-    console.error('Failed to initialize Supabase client:', err);
+    const client = createClient(url, key);
+    return { client, useSupabase: true, url, keyPresent: true };
+  } catch (err: any) {
+    return { client: null, useSupabase: false, url, keyPresent: true, error: err.message };
   }
 }
+
+// Initial client reference
+let { client: supabase, useSupabase } = getSupabase();
 
 // Offline fallback Database Path
 const dbDir = path.join(__dirname, 'data');
@@ -118,17 +122,25 @@ async function startServer() {
   // API to verify if database is active (online vs offline mode) with health & latency stats
   app.get('/api/db-status', async (req, res) => {
     const startTime = Date.now();
+    const sup = getSupabase();
+    supabase = sup.client;
+    useSupabase = sup.useSupabase;
+
     let isConnected = true;
     let latencyMs = 0;
     let supabaseError: string | null = null;
+    let tableMissing = false;
 
     if (useSupabase && supabase) {
       try {
-        const { data, error } = await supabase.from('subjects').select('id', { count: 'exact', head: true });
+        const { data, error } = await supabase.from('students').select('student_id', { count: 'exact', head: true });
         latencyMs = Date.now() - startTime;
         if (error) {
           isConnected = false;
           supabaseError = error.message;
+          if (error.code === 'PGRST205' || error.message?.includes('schema cache') || error.message?.includes('does not exist')) {
+            tableMissing = true;
+          }
         }
       } catch (e: any) {
         isConnected = false;
@@ -137,17 +149,23 @@ async function startServer() {
       }
     } else {
       latencyMs = Date.now() - startTime;
+      isConnected = false;
+      if (!sup.keyPresent) {
+        supabaseError = 'ยังไม่ได้ตั้งค่าคีย์ SUPABASE_SECRET_KEY หรือ SUPABASE_PUBLISHABLE_KEY ในไฟล์ .env / Secrets';
+      }
     }
 
     const db = readOfflineDb();
 
     res.json({
       useSupabase,
+      keyPresent: sup.keyPresent,
       isConnected,
       latencyMs,
-      supabaseUrl: supabaseUrl || null,
+      supabaseUrl: sup.url || null,
       supabaseError,
-      storageType: useSupabase ? (isConnected ? 'Cloud Supabase PostgreSQL' : 'Cloud Supabase (Error - Fallback Local)') : 'Local JSON File Storage (data/offline_db.json)',
+      tableMissing,
+      storageType: useSupabase ? (isConnected ? 'Cloud Supabase PostgreSQL' : (tableMissing ? 'Supabase (ยังไม่ได้สร้างตารางใน SQL Editor)' : 'Cloud Supabase (Error - Fallback Local)')) : 'Local JSON File Storage (data/offline_db.json)',
       stats: {
         teachers: db.teachers?.length || 0,
         students: db.students?.length || 0,
