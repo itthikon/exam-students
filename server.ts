@@ -12,8 +12,8 @@ dotenv.config();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Initialize Supabase Client
-const supabaseUrl = process.env.SUPABASE_URL || '';
-const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY || '';
+const supabaseUrl = process.env.SUPABASE_URL || 'https://lzzpebrahqwcberfqwfk.supabase.co';
+const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_KEY || '';
 let supabase: any = null;
 let useSupabase = false;
 
@@ -21,7 +21,7 @@ if (supabaseUrl && supabaseSecretKey) {
   try {
     supabase = createClient(supabaseUrl, supabaseSecretKey);
     useSupabase = true;
-    console.log('Supabase client initialized successfully.');
+    console.log('Supabase client initialized successfully with URL:', supabaseUrl);
   } catch (err) {
     console.error('Failed to initialize Supabase client:', err);
   }
