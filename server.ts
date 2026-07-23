@@ -128,7 +128,7 @@ async function startServer() {
     supabase = sup.client;
     useSupabase = sup.useSupabase;
 
-    let isConnected = true;
+    let isConnected = false;
     let latencyMs = 0;
     let supabaseError: string | null = null;
     let tableMissing = false;
@@ -138,11 +138,24 @@ async function startServer() {
         const { data, error } = await supabase.from('students').select('student_id', { count: 'exact', head: true });
         latencyMs = Date.now() - startTime;
         if (error) {
-          isConnected = false;
           supabaseError = error.message;
-          if (error.code === 'PGRST205' || error.message?.includes('schema cache') || error.message?.includes('does not exist')) {
+          const isTableErr = error.code === 'PGRST205' || error.code === '42P01' || error.message?.includes('schema cache') || error.message?.includes('does not exist');
+          if (isTableErr) {
             tableMissing = true;
+            isConnected = true; // Supabase Cloud is reached and connected! Only SQL tables need creation.
+          } else {
+            // Test if teachers table or basic ping works
+            const tRes = await supabase.from('teachers').select('id', { count: 'exact', head: true });
+            if (!tRes.error || tRes.error.code === 'PGRST205' || tRes.error.code === '42P01' || tRes.error.message?.includes('does not exist')) {
+              isConnected = true;
+              if (tRes.error) tableMissing = true;
+            } else {
+              isConnected = false;
+            }
           }
+        } else {
+          isConnected = true;
+          tableMissing = false;
         }
       } catch (e: any) {
         isConnected = false;
@@ -158,6 +171,40 @@ async function startServer() {
     }
 
     const db = readOfflineDb();
+    let stats = {
+      teachers: db.teachers?.length || 0,
+      students: db.students?.length || 0,
+      subjects: db.subjects?.length || 0,
+      exams: db.exams?.length || 0,
+      questions: db.questions?.length || 0,
+      exam_results: db.exam_results?.length || 0,
+      cheat_logs: db.cheat_logs?.length || 0,
+    };
+
+    if (useSupabase && isConnected && supabase && !tableMissing) {
+      try {
+        const [t, s, sub, ex, q, er, cl] = await Promise.all([
+          supabase.from('teachers').select('id', { count: 'exact', head: true }),
+          supabase.from('students').select('student_id', { count: 'exact', head: true }),
+          supabase.from('subjects').select('id', { count: 'exact', head: true }),
+          supabase.from('exams').select('id', { count: 'exact', head: true }),
+          supabase.from('questions').select('id', { count: 'exact', head: true }),
+          supabase.from('exam_results').select('id', { count: 'exact', head: true }),
+          supabase.from('cheat_logs').select('id', { count: 'exact', head: true })
+        ]);
+        stats = {
+          teachers: t.count ?? stats.teachers,
+          students: s.count ?? stats.students,
+          subjects: sub.count ?? stats.subjects,
+          exams: ex.count ?? stats.exams,
+          questions: q.count ?? stats.questions,
+          exam_results: er.count ?? stats.exam_results,
+          cheat_logs: cl.count ?? stats.cheat_logs,
+        };
+      } catch (e) {
+        // Fallback to local stats
+      }
+    }
 
     res.json({
       useSupabase,
@@ -167,16 +214,8 @@ async function startServer() {
       supabaseUrl: sup.url || null,
       supabaseError,
       tableMissing,
-      storageType: useSupabase ? (isConnected ? 'Cloud Supabase PostgreSQL' : (tableMissing ? 'Supabase (ยังไม่ได้สร้างตารางใน SQL Editor)' : 'Cloud Supabase (Error - Fallback Local)')) : 'Local JSON File Storage (data/offline_db.json)',
-      stats: {
-        teachers: db.teachers?.length || 0,
-        students: db.students?.length || 0,
-        subjects: db.subjects?.length || 0,
-        exams: db.exams?.length || 0,
-        questions: db.questions?.length || 0,
-        exam_results: db.exam_results?.length || 0,
-        cheat_logs: db.cheat_logs?.length || 0,
-      }
+      storageType: useSupabase ? (isConnected ? (tableMissing ? 'Cloud Supabase PostgreSQL (รอสร้างตาราง SQL)' : 'Cloud Supabase PostgreSQL') : 'Cloud Supabase (Error - Fallback Local)') : 'Local JSON File Storage (data/offline_db.json)',
+      stats
     });
   });
 
