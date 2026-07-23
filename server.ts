@@ -13,10 +13,22 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Helper function to dynamically initialize Supabase client
 function getSupabase() {
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://lzzpebrahqwcberfqwfk.supabase.co';
-  // Default fallback key decoded at runtime to prevent GitHub secret scanner push rejections
-  const defaultKey = Buffer.from('c2Jfc2VjcmV0XzV3WmNCLW5VR09uUVoybmc1eVNKQ0FfbF9ZMmx3YmE=', 'base64').toString('utf-8');
-  const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_KEY || defaultKey;
+  let url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://ydcqldedlcttxycjxcll.supabase.co';
+  // Override old database URL if environment retains old project URL
+  if (url.includes('lzzpebrahqwcberfqwfk')) {
+    url = 'https://ydcqldedlcttxycjxcll.supabase.co';
+  }
+
+  // Prioritize SUPABASE_ANON_KEY and filter out stale key signatures from previous project
+  const validKeys = [
+    process.env.SUPABASE_ANON_KEY,
+    process.env.SUPABASE_PUBLISHABLE_KEY,
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+    process.env.SUPABASE_SECRET_KEY,
+    process.env.SUPABASE_KEY
+  ].filter((k): k is string => !!k && !k.includes('5wZcB') && !k.includes('cv-eJsXw7dsobPsicRR5ZQ'));
+
+  const key = validKeys[0] || process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || '';
 
   if (!url || !key) {
     return { client: null, useSupabase: false, url, keyPresent: false };
@@ -138,7 +150,7 @@ async function startServer() {
         const { data, error } = await supabase.from('students').select('student_id', { count: 'exact', head: true });
         latencyMs = Date.now() - startTime;
         if (error) {
-          supabaseError = error.message;
+          supabaseError = error.message || 'Unauthorized / Invalid Key';
           const isTableErr = error.code === 'PGRST205' || error.code === '42P01' || error.message?.includes('schema cache') || error.message?.includes('does not exist');
           if (isTableErr) {
             tableMissing = true;
@@ -146,11 +158,19 @@ async function startServer() {
           } else {
             // Test if teachers table or basic ping works
             const tRes = await supabase.from('teachers').select('id', { count: 'exact', head: true });
-            if (!tRes.error || tRes.error.code === 'PGRST205' || tRes.error.code === '42P01' || tRes.error.message?.includes('does not exist')) {
+            if (!tRes.error) {
               isConnected = true;
-              if (tRes.error) tableMissing = true;
+              tableMissing = false;
+            } else if (tRes.error.code === 'PGRST205' || tRes.error.code === '42P01' || tRes.error.message?.includes('does not exist')) {
+              isConnected = true;
+              tableMissing = true;
             } else {
               isConnected = false;
+              if (!tRes.error.message || tRes.error.message.length === 0) {
+                supabaseError = 'API Key ไม่ถูกต้องสำหรับโปรเจกต์ใหม่ (https://ydcqldedlcttxycjxcll.supabase.co) - กรุณาระบุ SUPABASE_SECRET_KEY หรือ SUPABASE_PUBLISHABLE_KEY ใน Secrets';
+              } else {
+                supabaseError = tRes.error.message;
+              }
             }
           }
         } else {
