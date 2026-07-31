@@ -854,7 +854,7 @@ export default function App() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'นำเข้าไม่สำเร็จ');
 
-      showToast('นำคืนฐานข้อมูลเรียบร้อยแล้ว!', 'success');
+      showToast(data.message || 'นำคืนฐานข้อมูลเรียบร้อยแล้ว!', 'success');
       refreshData();
     } catch (err: any) {
       showToast('เกิดข้อผิดพลาดในการนำคืนข้อมูล: ' + err.message, 'error');
