@@ -935,20 +935,74 @@ async function startServer() {
     const resultObj = {
       id: 'res_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
       student_id,
-      student_name,
+      student_name: student_name || 'นักเรียน',
       exam_id,
       score: Number(score),
       total_score: Number(total_score),
+      max_score: Number(total_score),
+      percentage: Number(total_score) > 0 ? (Number(score) / Number(total_score)) * 100 : 0,
       start_time: start_time || new Date().toISOString(),
       submit_time: submit_time || new Date().toISOString(),
-      answers: typeof answers === 'string' ? answers : JSON.stringify(answers),
+      submitted_at: submit_time || new Date().toISOString(),
+      answers: typeof answers === 'string' ? answers : JSON.stringify(answers || {}),
+      details: typeof answers === 'string' ? answers : JSON.stringify(answers || {}),
       status: status || 'completed'
     };
 
     if (useSupabase) {
       try {
-        const { data, error } = await supabase.from('exam_results').insert(resultObj).select();
-        if (!error && data) return res.json(data[0]);
+        let { data, error } = await supabase.from('exam_results').insert(resultObj).select();
+
+        // Fallback retry 1: Standard schema
+        if (error) {
+          console.error('Supabase full exam_results insert error:', error.message);
+          const payload1 = {
+            id: resultObj.id,
+            student_id: resultObj.student_id,
+            student_name: resultObj.student_name,
+            exam_id: resultObj.exam_id,
+            score: resultObj.score,
+            total_score: resultObj.total_score,
+            start_time: resultObj.start_time,
+            submit_time: resultObj.submit_time,
+            answers: resultObj.answers,
+            status: resultObj.status
+          };
+          const res1 = await supabase.from('exam_results').insert(payload1).select();
+          if (!res1.error && res1.data) {
+            data = res1.data;
+            error = null;
+          } else if (res1.error) {
+            // Fallback retry 2: Old/Alternative schema
+            const payload2 = {
+              id: resultObj.id,
+              student_id: resultObj.student_id,
+              student_name: resultObj.student_name,
+              exam_id: resultObj.exam_id,
+              score: resultObj.score,
+              max_score: resultObj.total_score,
+              percentage: resultObj.percentage,
+              submitted_at: resultObj.submit_time,
+              details: resultObj.answers
+            };
+            const res2 = await supabase.from('exam_results').insert(payload2).select();
+            if (!res2.error && res2.data) {
+              data = res2.data;
+              error = null;
+            } else if (res2.error) {
+              console.error('Supabase all exam_results insert retries failed:', res2.error.message);
+            }
+          }
+        }
+
+        if (!error && data) {
+          // Always maintain local backup as well
+          const db = readOfflineDb();
+          db.exam_results = (db.exam_results || []).filter((r: any) => r.id !== resultObj.id);
+          db.exam_results.push(resultObj);
+          writeOfflineDb(db);
+          return res.json(data[0]);
+        }
       } catch (err) {
         console.error('Supabase save exam results failed, saving fallback:', err);
       }
@@ -962,16 +1016,44 @@ async function startServer() {
 
   // GET EXAM RESULTS (REAL-TIME PROGRESS / COMPLETED REPORTS)
   app.get('/api/exam-results', async (req, res) => {
+    let results: any[] = [];
     if (useSupabase) {
       try {
         const { data, error } = await supabase.from('exam_results').select('*');
-        if (!error && data) return res.json(data);
+        if (!error && data) {
+          results = data.map((r: any) => ({
+            id: r.id,
+            student_id: r.student_id,
+            student_name: r.student_name || 'นักเรียน',
+            exam_id: r.exam_id,
+            score: Number(r.score ?? 0),
+            total_score: Number(r.total_score ?? r.max_score ?? 0),
+            start_time: r.start_time || r.submitted_at || new Date().toISOString(),
+            submit_time: r.submit_time || r.submitted_at || new Date().toISOString(),
+            answers: typeof r.answers === 'string' ? r.answers : (r.answers ? JSON.stringify(r.answers) : (typeof r.details === 'string' ? r.details : JSON.stringify(r.details || {}))),
+            status: r.status || 'completed'
+          }));
+        } else if (error) {
+          console.error('Supabase exam results fetch error:', error.message);
+        }
       } catch (err) {
         console.error('Supabase exam results read failed:', err);
       }
     }
+
+    // Merge with local offline results if any are missing
     const db = readOfflineDb();
-    res.json(db.exam_results);
+    const localResults = db.exam_results || [];
+    if (localResults.length > 0) {
+      const existingIds = new Set(results.map((r: any) => r.id));
+      for (const loc of localResults) {
+        if (!existingIds.has(loc.id)) {
+          results.push(loc);
+        }
+      }
+    }
+
+    res.json(results);
   });
 
   // SUBMIT CHEAT/FRAUD DETECTED EVENT
@@ -985,16 +1067,47 @@ async function startServer() {
     const cheatLogObj = {
       id: 'cl_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
       student_id,
-      student_name,
+      student_name: student_name || 'นักเรียน',
       exam_id,
       violation_type,
+      reason: violation_type,
       timestamp: new Date().toISOString(),
       details: details || ''
     };
 
     if (useSupabase) {
       try {
-        const { data, error } = await supabase.from('cheat_logs').insert(cheatLogObj).select();
+        let { data, error } = await supabase.from('cheat_logs').insert(cheatLogObj).select();
+        if (error) {
+          const payload1 = {
+            id: cheatLogObj.id,
+            student_id: cheatLogObj.student_id,
+            student_name: cheatLogObj.student_name,
+            exam_id: cheatLogObj.exam_id,
+            violation_type: cheatLogObj.violation_type,
+            timestamp: cheatLogObj.timestamp,
+            details: cheatLogObj.details
+          };
+          const res1 = await supabase.from('cheat_logs').insert(payload1).select();
+          if (!res1.error && res1.data) {
+            data = res1.data;
+            error = null;
+          } else {
+            const payload2 = {
+              id: cheatLogObj.id,
+              student_id: cheatLogObj.student_id,
+              student_name: cheatLogObj.student_name,
+              exam_id: cheatLogObj.exam_id,
+              reason: cheatLogObj.violation_type,
+              timestamp: cheatLogObj.timestamp
+            };
+            const res2 = await supabase.from('cheat_logs').insert(payload2).select();
+            if (!res2.error && res2.data) {
+              data = res2.data;
+              error = null;
+            }
+          }
+        }
         if (!error && data) return res.json(data[0]);
       } catch (err) {
         console.error('Supabase save cheat log failed:', err);
@@ -1009,16 +1122,38 @@ async function startServer() {
 
   // GET CHEAT LOGS (REAL-TIME DETECTION)
   app.get('/api/cheat-logs', async (req, res) => {
+    let logs: any[] = [];
     if (useSupabase) {
       try {
         const { data, error } = await supabase.from('cheat_logs').select('*');
-        if (!error && data) return res.json(data);
+        if (!error && data) {
+          logs = data.map((cl: any) => ({
+            id: cl.id,
+            student_id: cl.student_id,
+            student_name: cl.student_name || 'นักเรียน',
+            exam_id: cl.exam_id,
+            violation_type: cl.violation_type || cl.reason || 'unknown',
+            timestamp: cl.timestamp || new Date().toISOString(),
+            details: cl.details || ''
+          }));
+        }
       } catch (err) {
         console.error('Supabase cheat logs read failed:', err);
       }
     }
+
     const db = readOfflineDb();
-    res.json(db.cheat_logs);
+    const localLogs = db.cheat_logs || [];
+    if (localLogs.length > 0) {
+      const existingIds = new Set(logs.map((l: any) => l.id));
+      for (const loc of localLogs) {
+        if (!existingIds.has(loc.id)) {
+          logs.push(loc);
+        }
+      }
+    }
+
+    res.json(logs);
   });
 
   // DELETE ALL CHEAT LOGS

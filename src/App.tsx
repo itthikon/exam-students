@@ -70,20 +70,40 @@ CREATE TABLE IF NOT EXISTS public.exam_results (
     exam_id TEXT,
     exam_title TEXT,
     score NUMERIC DEFAULT 0,
+    total_score NUMERIC DEFAULT 0,
     max_score NUMERIC DEFAULT 0,
     percentage NUMERIC DEFAULT 0,
+    start_time TIMESTAMPTZ DEFAULT NOW(),
+    submit_time TIMESTAMPTZ DEFAULT NOW(),
     submitted_at TIMESTAMPTZ DEFAULT NOW(),
-    details JSONB
+    answers JSONB,
+    details JSONB,
+    status TEXT DEFAULT 'completed'
 );
+
+ALTER TABLE public.exam_results ADD COLUMN IF NOT EXISTS total_score NUMERIC DEFAULT 0;
+ALTER TABLE public.exam_results ADD COLUMN IF NOT EXISTS start_time TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE public.exam_results ADD COLUMN IF NOT EXISTS submit_time TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE public.exam_results ADD COLUMN IF NOT EXISTS answers JSONB;
+ALTER TABLE public.exam_results ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'completed';
+ALTER TABLE public.exam_results ADD COLUMN IF NOT EXISTS max_score NUMERIC DEFAULT 0;
+ALTER TABLE public.exam_results ADD COLUMN IF NOT EXISTS percentage NUMERIC DEFAULT 0;
+ALTER TABLE public.exam_results ADD COLUMN IF NOT EXISTS details JSONB;
 
 CREATE TABLE IF NOT EXISTS public.cheat_logs (
     id TEXT PRIMARY KEY,
     student_id TEXT,
     student_name TEXT,
     exam_id TEXT,
+    violation_type TEXT,
     reason TEXT,
+    details TEXT,
     timestamp TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE public.cheat_logs ADD COLUMN IF NOT EXISTS violation_type TEXT;
+ALTER TABLE public.cheat_logs ADD COLUMN IF NOT EXISTS reason TEXT;
+ALTER TABLE public.cheat_logs ADD COLUMN IF NOT EXISTS details TEXT;
 
 CREATE TABLE IF NOT EXISTS public.announcements (
     id TEXT PRIMARY KEY,
