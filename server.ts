@@ -114,6 +114,25 @@ function writeOfflineDb(data: any) {
   }
 }
 
+// Merge collections from Local and Cloud without losing unique items
+function mergeCollections<T>(localList: T[] = [], cloudList: T[] = [], primaryKey: string = 'id'): T[] {
+  const map = new Map<string, T>();
+  for (const item of (localList || [])) {
+    if (!item) continue;
+    const key = String((item as any)[primaryKey] || (item as any).id || (item as any).student_id || (item as any).code || '');
+    if (key && key !== 'undefined' && key !== 'null') map.set(key, item);
+  }
+  for (const item of (cloudList || [])) {
+    if (!item) continue;
+    const key = String((item as any)[primaryKey] || (item as any).id || (item as any).student_id || (item as any).code || '');
+    if (key && key !== 'undefined' && key !== 'null') {
+      const existing = map.get(key);
+      map.set(key, existing ? { ...existing, ...item } : item);
+    }
+  }
+  return Array.from(map.values());
+}
+
 async function startServer() {
   // Check if we are running in production and the frontend dist is not built
   if (process.env.NODE_ENV === 'production') {
@@ -454,16 +473,24 @@ async function startServer() {
 
   // GET SUBJECTS
   app.get('/api/subjects', async (req, res) => {
-    if (useSupabase) {
+    const db = readOfflineDb();
+    let subjects = db.subjects || [];
+
+    if (useSupabase && supabase) {
       try {
         const { data, error } = await supabase.from('subjects').select('*').order('code', { ascending: true });
-        if (!error && data && data.length > 0) return res.json(data);
+        if (!error && data) {
+          subjects = mergeCollections(db.subjects, data, 'code');
+          if (subjects.length !== db.subjects.length) {
+            db.subjects = subjects;
+            writeOfflineDb(db);
+          }
+        }
       } catch (err) {
-        console.error('Supabase subjects read error, trying offline fallback:', err);
+        console.error('Supabase subjects read error, using local fallback:', err);
       }
     }
-    const db = readOfflineDb();
-    res.json(db.subjects);
+    res.json(subjects);
   });
 
   // CREATE SUBJECT
@@ -475,18 +502,23 @@ async function startServer() {
 
     const newSubject = { id: 'sub_' + Date.now(), code: code.trim(), name: name.trim() };
 
-    if (useSupabase) {
+    const db = readOfflineDb();
+    const existingIdx = db.subjects.findIndex((s: any) => s.code === newSubject.code || s.id === newSubject.id);
+    if (existingIdx !== -1) {
+      db.subjects[existingIdx] = newSubject;
+    } else {
+      db.subjects.push(newSubject);
+    }
+    writeOfflineDb(db);
+
+    if (useSupabase && supabase) {
       try {
-        const { data, error } = await supabase.from('subjects').insert(newSubject).select();
-        if (!error && data) return res.json(data[0]);
+        await supabase.from('subjects').upsert(newSubject);
       } catch (err) {
-        console.error('Supabase create subject error, trying offline fallback:', err);
+        console.error('Supabase create subject error:', err);
       }
     }
 
-    const db = readOfflineDb();
-    db.subjects.push(newSubject);
-    writeOfflineDb(db);
     res.json(newSubject);
   });
 
@@ -494,34 +526,43 @@ async function startServer() {
   app.delete('/api/subjects/:id', async (req, res) => {
     const id = req.params.id;
 
-    if (useSupabase) {
+    const db = readOfflineDb();
+    db.subjects = db.subjects.filter((s: any) => s.id !== id && s.code !== id);
+    db.exams = db.exams.filter((e: any) => e.subject_id !== id);
+    writeOfflineDb(db);
+
+    if (useSupabase && supabase) {
       try {
-        const { error } = await supabase.from('subjects').delete().eq('id', id);
-        if (!error) return res.json({ success: true });
+        await supabase.from('subjects').delete().eq('id', id);
+        await supabase.from('subjects').delete().eq('code', id);
       } catch (err) {
-        console.error('Supabase delete subject error, trying offline fallback:', err);
+        console.error('Supabase delete subject error:', err);
       }
     }
 
-    const db = readOfflineDb();
-    db.subjects = db.subjects.filter((s: any) => s.id !== id);
-    db.exams = db.exams.filter((e: any) => e.subject_id !== id);
-    writeOfflineDb(db);
     res.json({ success: true });
   });
 
   // GET EXAMS
   app.get('/api/exams', async (req, res) => {
-    if (useSupabase) {
+    const db = readOfflineDb();
+    let exams = db.exams || [];
+
+    if (useSupabase && supabase) {
       try {
         const { data, error } = await supabase.from('exams').select('*');
-        if (!error && data && data.length > 0) return res.json(data);
+        if (!error && data) {
+          exams = mergeCollections(db.exams, data, 'id');
+          if (exams.length !== db.exams.length) {
+            db.exams = exams;
+            writeOfflineDb(db);
+          }
+        }
       } catch (err) {
-        console.error('Supabase exams read error, trying offline fallback:', err);
+        console.error('Supabase exams read error:', err);
       }
     }
-    const db = readOfflineDb();
-    res.json(db.exams);
+    res.json(exams);
   });
 
   // CREATE EXAM
@@ -542,18 +583,18 @@ async function startServer() {
       anti_cheat_level: anti_cheat_level || 'strict'
     };
 
-    if (useSupabase) {
-      try {
-        const { data, error } = await supabase.from('exams').insert(newExam).select();
-        if (!error && data) return res.json(data[0]);
-      } catch (err) {
-        console.error('Supabase create exam error, trying offline fallback:', err);
-      }
-    }
-
     const db = readOfflineDb();
     db.exams.push(newExam);
     writeOfflineDb(db);
+
+    if (useSupabase && supabase) {
+      try {
+        await supabase.from('exams').upsert(newExam);
+      } catch (err) {
+        console.error('Supabase create exam error:', err);
+      }
+    }
+
     res.json(newExam);
   });
 
@@ -562,26 +603,32 @@ async function startServer() {
     const id = req.params.id;
     const { is_active, anti_cheat_level } = req.body;
 
-    if (useSupabase) {
+    const db = readOfflineDb();
+    const index = db.exams.findIndex((e: any) => e.id === id);
+    let updatedExam = null;
+
+    if (index !== -1) {
+      if (is_active !== undefined) db.exams[index].is_active = is_active;
+      if (anti_cheat_level !== undefined) db.exams[index].anti_cheat_level = anti_cheat_level;
+      updatedExam = db.exams[index];
+      writeOfflineDb(db);
+    }
+
+    if (useSupabase && supabase) {
       try {
         const updateObj: any = {};
         if (is_active !== undefined) updateObj.is_active = is_active;
         if (anti_cheat_level !== undefined) updateObj.anti_cheat_level = anti_cheat_level;
 
-        const { data, error } = await supabase.from('exams').update(updateObj).eq('id', id).select();
-        if (!error && data) return res.json(data[0]);
+        const { data } = await supabase.from('exams').update(updateObj).eq('id', id).select();
+        if (data && data.length > 0) updatedExam = data[0];
       } catch (err) {
         console.error('Supabase update exam error:', err);
       }
     }
 
-    const db = readOfflineDb();
-    const index = db.exams.findIndex((e: any) => e.id === id);
-    if (index !== -1) {
-      if (is_active !== undefined) db.exams[index].is_active = is_active;
-      if (anti_cheat_level !== undefined) db.exams[index].anti_cheat_level = anti_cheat_level;
-      writeOfflineDb(db);
-      res.json(db.exams[index]);
+    if (updatedExam) {
+      res.json(updatedExam);
     } else {
       res.status(404).json({ error: 'ไม่พบชุดข้อสอบนี้' });
     }
@@ -591,38 +638,45 @@ async function startServer() {
   app.delete('/api/exams/:id', async (req, res) => {
     const id = req.params.id;
 
-    if (useSupabase) {
+    const db = readOfflineDb();
+    db.exams = db.exams.filter((e: any) => e.id !== id);
+    db.questions = db.questions.filter((q: any) => q.exam_id !== id);
+    writeOfflineDb(db);
+
+    if (useSupabase && supabase) {
       try {
-        const { error } = await supabase.from('exams').delete().eq('id', id);
-        if (!error) return res.json({ success: true });
+        await supabase.from('exams').delete().eq('id', id);
+        await supabase.from('questions').delete().eq('exam_id', id);
       } catch (err) {
         console.error('Supabase delete exam error:', err);
       }
     }
 
-    const db = readOfflineDb();
-    db.exams = db.exams.filter((e: any) => e.id !== id);
-    db.questions = db.questions.filter((q: any) => q.exam_id !== id);
-    writeOfflineDb(db);
     res.json({ success: true });
   });
 
   // GET QUESTIONS BY EXAM
   app.get('/api/exams/:examId/questions', async (req, res) => {
     const examId = req.params.examId;
+    const db = readOfflineDb();
+    let localQuestions = (db.questions || []).filter((q: any) => q.exam_id === examId);
 
-    if (useSupabase) {
+    if (useSupabase && supabase) {
       try {
         const { data, error } = await supabase.from('questions').select('*').eq('exam_id', examId);
-        if (!error && data) return res.json(data);
+        if (!error && data) {
+          const merged = mergeCollections(localQuestions, data, 'id');
+          const otherQuestions = (db.questions || []).filter((q: any) => q.exam_id !== examId);
+          db.questions = [...otherQuestions, ...merged];
+          writeOfflineDb(db);
+          localQuestions = merged;
+        }
       } catch (err) {
         console.error('Supabase questions read error:', err);
       }
     }
 
-    const db = readOfflineDb();
-    const questions = db.questions.filter((q: any) => q.exam_id === examId);
-    res.json(questions);
+    res.json(localQuestions);
   });
 
   // SAVE OR UPDATE A QUESTION
@@ -644,15 +698,6 @@ async function startServer() {
       explanation: explanation ? explanation.trim() : ''
     };
 
-    if (useSupabase) {
-      try {
-        const { data, error } = await supabase.from('questions').upsert(questionObj).select();
-        if (!error && data) return res.json(data[0]);
-      } catch (err) {
-        console.error('Supabase question save error:', err);
-      }
-    }
-
     const db = readOfflineDb();
     const index = db.questions.findIndex((q: any) => q.id === targetId);
     if (index !== -1) {
@@ -661,13 +706,22 @@ async function startServer() {
       db.questions.push(questionObj);
     }
     writeOfflineDb(db);
+
+    if (useSupabase && supabase) {
+      try {
+        await supabase.from('questions').upsert(questionObj);
+      } catch (err) {
+        console.error('Supabase question save error:', err);
+      }
+    }
+
     res.json(questionObj);
   });
 
   // BATCH UPDATE QUESTIONS FOR AN EXAM (Replace or add)
   app.post('/api/exams/:examId/questions/batch', async (req, res) => {
     const examId = req.params.examId;
-    const { questions } = req.body; // Array of questions
+    const { questions } = req.body;
 
     if (!Array.isArray(questions)) {
       return res.status(400).json({ error: 'ข้อมูลคำถามไม่ถูกต้อง' });
@@ -683,30 +737,27 @@ async function startServer() {
       explanation: q.explanation ? q.explanation.trim() : ''
     }));
 
-    if (useSupabase) {
+    const db = readOfflineDb();
+    db.questions = db.questions.filter((q: any) => q.exam_id !== examId);
+    db.questions.push(...processedQuestions);
+    writeOfflineDb(db);
+
+    if (useSupabase && supabase) {
       try {
-        // Delete old questions
         await supabase.from('questions').delete().eq('exam_id', examId);
-        // Insert new ones
-        const { data, error } = await supabase.from('questions').insert(processedQuestions).select();
-        if (!error && data) return res.json(data);
+        await supabase.from('questions').insert(processedQuestions);
       } catch (err) {
         console.error('Supabase batch save failed:', err);
       }
     }
 
-    const db = readOfflineDb();
-    // Filter out old questions of this exam
-    db.questions = db.questions.filter((q: any) => q.exam_id !== examId);
-    db.questions.push(...processedQuestions);
-    writeOfflineDb(db);
     res.json(processedQuestions);
   });
 
   // BATCH APPEND QUESTIONS FOR AN EXAM (Append to existing)
   app.post('/api/exams/:examId/questions/append-batch', async (req, res) => {
     const examId = req.params.examId;
-    const { questions } = req.body; // Array of questions
+    const { questions } = req.body;
 
     if (!Array.isArray(questions)) {
       return res.status(400).json({ error: 'ข้อมูลคำถามไม่ถูกต้อง' });
@@ -722,18 +773,18 @@ async function startServer() {
       explanation: q.explanation ? q.explanation.trim() : ''
     }));
 
-    if (useSupabase) {
+    const db = readOfflineDb();
+    db.questions.push(...processedQuestions);
+    writeOfflineDb(db);
+
+    if (useSupabase && supabase) {
       try {
-        const { data, error } = await supabase.from('questions').insert(processedQuestions).select();
-        if (!error && data) return res.json(data);
+        await supabase.from('questions').insert(processedQuestions);
       } catch (err) {
         console.error('Supabase batch append failed:', err);
       }
     }
 
-    const db = readOfflineDb();
-    db.questions.push(...processedQuestions);
-    writeOfflineDb(db);
     res.json(processedQuestions);
   });
 
@@ -741,18 +792,18 @@ async function startServer() {
   app.delete('/api/questions/:id', async (req, res) => {
     const id = req.params.id;
 
-    if (useSupabase) {
+    const db = readOfflineDb();
+    db.questions = db.questions.filter((q: any) => q.id !== id);
+    writeOfflineDb(db);
+
+    if (useSupabase && supabase) {
       try {
-        const { error } = await supabase.from('questions').delete().eq('id', id);
-        if (!error) return res.json({ success: true });
+        await supabase.from('questions').delete().eq('id', id);
       } catch (err) {
         console.error('Supabase delete question error:', err);
       }
     }
 
-    const db = readOfflineDb();
-    db.questions = db.questions.filter((q: any) => q.id !== id);
-    writeOfflineDb(db);
     res.json({ success: true });
   });
 
@@ -789,12 +840,12 @@ async function startServer() {
 
     if (useSupabase && supabase) {
       try {
-        const { error } = await supabase.from('students').upsert(normalizedStudents);
-        if (!error) {
+        const resSup = await upsertTableWithFallback('students', normalizedStudents);
+        if (!resSup.error) {
           savedToCloud = true;
         } else {
-          cloudError = error.message;
-          console.error('Supabase students roster save failed:', error);
+          cloudError = resSup.error;
+          console.error('Supabase students roster save failed:', resSup.error);
         }
       } catch (err: any) {
         cloudError = err.message || 'Supabase connection error';
@@ -812,16 +863,25 @@ async function startServer() {
 
   // GET STUDENTS
   app.get('/api/students', async (req, res) => {
-    if (useSupabase) {
+    const db = readOfflineDb();
+    let students = db.students || [];
+
+    if (useSupabase && supabase) {
       try {
         const { data, error } = await supabase.from('students').select('*').order('student_id', { ascending: true });
-        if (!error && data) return res.json(data);
+        if (!error && data) {
+          students = mergeCollections(db.students, data, 'student_id');
+          if (students.length !== db.students.length) {
+            db.students = students;
+            writeOfflineDb(db);
+          }
+        }
       } catch (err) {
         console.error('Supabase students read failed:', err);
       }
     }
-    const db = readOfflineDb();
-    res.json(db.students);
+
+    res.json(students);
   });
 
   // ADD SINGLE STUDENT
@@ -839,50 +899,38 @@ async function startServer() {
       class_group: class_group.trim()
     };
 
-    if (useSupabase) {
-      try {
-        let { data, error } = await supabase.from('students').insert(newStudent).select();
-        if (error && (error.message?.includes('id') || error.code === 'PGRST204')) {
-          const fallbackStudent = {
-            student_id: student_id.trim(),
-            name: name.trim(),
-            password: password.trim(),
-            class_group: class_group.trim()
-          };
-          const resFallback = await supabase.from('students').insert(fallbackStudent).select();
-          data = resFallback.data;
-          error = resFallback.error;
-        }
-        if (!error && data && data.length > 0) return res.json(data[0]);
-      } catch (err) {
-        console.error('Supabase single student create error:', err);
-      }
-    }
-
     const db = readOfflineDb();
-    // Check duplication
     if (db.students.some((s: any) => s.student_id === newStudent.student_id)) {
       return res.status(400).json({ error: 'มีรหัสนักเรียนนี้ในระบบอยู่แล้ว' });
     }
     db.students.push(newStudent);
     writeOfflineDb(db);
+
+    if (useSupabase && supabase) {
+      try {
+        await upsertTableWithFallback('students', [newStudent]);
+      } catch (err) {
+        console.error('Supabase single student create error:', err);
+      }
+    }
+
     res.json(newStudent);
   });
 
   // DELETE ALL STUDENTS IN SYSTEM
   app.delete('/api/students/batch/all', async (req, res) => {
-    if (useSupabase) {
+    const db = readOfflineDb();
+    db.students = [];
+    writeOfflineDb(db);
+
+    if (useSupabase && supabase) {
       try {
-        const { error } = await supabase.from('students').delete().neq('id', 'placeholder_nonexistent');
-        if (!error) return res.json({ success: true });
+        await supabase.from('students').delete().neq('student_id', 'placeholder_nonexistent');
       } catch (err) {
         console.error('Supabase delete all students error:', err);
       }
     }
 
-    const db = readOfflineDb();
-    db.students = [];
-    writeOfflineDb(db);
     res.json({ success: true });
   });
 
@@ -890,37 +938,38 @@ async function startServer() {
   app.delete('/api/students/batch/class/:class_group', async (req, res) => {
     const class_group = req.params.class_group;
 
-    if (useSupabase) {
+    const db = readOfflineDb();
+    db.students = db.students.filter((s: any) => s.class_group !== class_group);
+    writeOfflineDb(db);
+
+    if (useSupabase && supabase) {
       try {
-        const { error } = await supabase.from('students').delete().eq('class_group', class_group);
-        if (!error) return res.json({ success: true });
+        await supabase.from('students').delete().eq('class_group', class_group);
       } catch (err) {
         console.error('Supabase delete class students error:', err);
       }
     }
 
-    const db = readOfflineDb();
-    db.students = db.students.filter((s: any) => s.class_group !== class_group);
-    writeOfflineDb(db);
     res.json({ success: true });
   });
 
-  // DELETE STUDENT
+  // DELETE SINGLE STUDENT
   app.delete('/api/students/:id', async (req, res) => {
     const id = req.params.id;
 
-    if (useSupabase) {
+    const db = readOfflineDb();
+    db.students = db.students.filter((s: any) => s.id !== id && s.student_id !== id);
+    writeOfflineDb(db);
+
+    if (useSupabase && supabase) {
       try {
-        const { error } = await supabase.from('students').delete().eq('id', id);
-        if (!error) return res.json({ success: true });
+        await supabase.from('students').delete().eq('id', id);
+        await supabase.from('students').delete().eq('student_id', id);
       } catch (err) {
         console.error('Supabase student delete error:', err);
       }
     }
 
-    const db = readOfflineDb();
-    db.students = db.students.filter((s: any) => s.id !== id);
-    writeOfflineDb(db);
     res.json({ success: true });
   });
 
@@ -1438,11 +1487,11 @@ async function startServer() {
             supabase.from('popup_messages').select('*')
           ]);
 
-          if (t.data && t.data.length > 0) db.teachers = t.data;
-          if (s.data && s.data.length > 0) db.students = s.data;
-          if (sub.data && sub.data.length > 0) db.subjects = sub.data;
-          if (ex.data && ex.data.length > 0) db.exams = ex.data;
-          if (q.data && q.data.length > 0) db.questions = q.data;
+          if (t.data) db.teachers = mergeCollections(db.teachers, t.data, 'email');
+          if (s.data) db.students = mergeCollections(db.students, s.data, 'student_id');
+          if (sub.data) db.subjects = mergeCollections(db.subjects, sub.data, 'code');
+          if (ex.data) db.exams = mergeCollections(db.exams, ex.data, 'id');
+          if (q.data) db.questions = mergeCollections(db.questions, q.data, 'id');
 
           if (er.data && er.data.length > 0) {
             const cloudEr = er.data.map((r: any) => ({
@@ -1461,22 +1510,13 @@ async function startServer() {
               details: typeof r.details === 'string' ? r.details : JSON.stringify(r.details || r.answers || {}),
               status: r.status || 'completed'
             }));
-            const erMap = new Map();
-            (db.exam_results || []).forEach((r: any) => erMap.set(r.id, r));
-            cloudEr.forEach((r: any) => erMap.set(r.id, r));
-            db.exam_results = Array.from(erMap.values());
+            db.exam_results = mergeCollections(db.exam_results, cloudEr, 'id');
           }
 
-          if (cl.data && cl.data.length > 0) {
-            const clMap = new Map();
-            (db.cheat_logs || []).forEach((r: any) => clMap.set(r.id, r));
-            cl.data.forEach((r: any) => clMap.set(r.id, r));
-            db.cheat_logs = Array.from(clMap.values());
-          }
-
-          if (ann.data && ann.data.length > 0) db.announcements = ann.data;
-          if (disc.data && disc.data.length > 0) db.discussions = disc.data;
-          if (pop.data && pop.data.length > 0) db.popup_messages = pop.data;
+          if (cl.data) db.cheat_logs = mergeCollections(db.cheat_logs, cl.data, 'id');
+          if (ann.data) db.announcements = mergeCollections(db.announcements, ann.data, 'id');
+          if (disc.data) db.discussions = mergeCollections(db.discussions, disc.data, 'id');
+          if (pop.data) db.popup_messages = mergeCollections(db.popup_messages, pop.data, 'id');
 
           // Update local offline cache with merged cloud data
           writeOfflineDb(db);
@@ -1500,6 +1540,9 @@ async function startServer() {
       if (!backupData || typeof backupData !== 'object' || !backupData.teachers || !backupData.students) {
         return res.status(400).json({ error: 'รูปแบบไฟล์สำรองฐานข้อมูลไม่ถูกต้อง' });
       }
+
+      // ALWAYS write to local offline DB first so data is guaranteed saved locally!
+      writeOfflineDb(backupData);
 
       const syncErrors: string[] = [];
       const syncCounts: Record<string, number> = {};
@@ -1528,16 +1571,7 @@ async function startServer() {
             }
           }
         }
-
-        if (syncErrors.length > 0) {
-          return res.status(400).json({
-            error: `ไม่สามารถนำคืนข้อมูลลงใน Cloud Supabase ได้: ${syncErrors.join('; ')}`
-          });
-        }
       }
-
-      // If Cloud restoration succeeded (or if Supabase is not configured), update local offline storage as well
-      writeOfflineDb(backupData);
 
       const tableSummary = Object.entries(syncCounts)
         .map(([tbl, count]) => `${tbl}: ${count} รายการ`)
@@ -1546,8 +1580,11 @@ async function startServer() {
       res.json({
         success: true,
         counts: syncCounts,
+        syncErrors,
         message: useSupabase && supabase
-          ? `นำคืนฐานข้อมูลเข้าสู่ Cloud Supabase สำเร็จแล้ว! (${tableSummary || 'ทุกตารางครบถ้วน'})`
+          ? (syncErrors.length > 0 
+              ? `นำคืนข้อมูลเข้าสู่ Local สำเร็จเรียบร้อยแล้ว! (ข้อความจาก Cloud: ${syncErrors.join('; ')})`
+              : `นำคืนฐานข้อมูลเข้าสู่ Cloud Supabase และ Local สำเร็จแล้ว! (${tableSummary || 'ทุกตารางครบถ้วน'})`)
           : 'นำคืนฐานข้อมูลเข้าสู่ Local เรียบร้อยแล้ว!'
       });
     } catch (err: any) {
@@ -1555,7 +1592,7 @@ async function startServer() {
     }
   });
 
-  // MANUAL SYNC ALL LOCAL DATA TO SUPABASE CLOUD
+  // MANUAL SYNC ALL LOCAL DATA TO SUPABASE CLOUD & MERGE BACK
   app.post('/api/db-sync-to-cloud', async (req, res) => {
     if (!useSupabase || !supabase) {
       return res.status(400).json({ 
@@ -1581,6 +1618,7 @@ async function startServer() {
     ];
 
     try {
+      // Step 1: Upsert all local data to Supabase
       for (const table of tablesOrder) {
         if (Array.isArray(db[table]) && db[table].length > 0) {
           const resSup = await upsertTableWithFallback(table, db[table]);
@@ -1592,21 +1630,67 @@ async function startServer() {
         }
       }
 
-      if (errors.length > 0) {
-        return res.status(400).json({
-          error: `การซิงค์ข้อมูลลง Cloud Supabase ล้มเหลวบางส่วน: ${errors.join('; ')}`,
-          syncResults,
-          errors
-        });
+      // Step 2: Fetch back from Supabase to merge any cloud-only items into local DB
+      try {
+        const [t, s, sub, ex, q, er, cl, ann, disc, pop] = await Promise.all([
+          supabase.from('teachers').select('*'),
+          supabase.from('students').select('*'),
+          supabase.from('subjects').select('*'),
+          supabase.from('exams').select('*'),
+          supabase.from('questions').select('*'),
+          supabase.from('exam_results').select('*'),
+          supabase.from('cheat_logs').select('*'),
+          supabase.from('announcements').select('*'),
+          supabase.from('discussions').select('*'),
+          supabase.from('popup_messages').select('*')
+        ]);
+
+        if (t.data) db.teachers = mergeCollections(db.teachers, t.data, 'email');
+        if (s.data) db.students = mergeCollections(db.students, s.data, 'student_id');
+        if (sub.data) db.subjects = mergeCollections(db.subjects, sub.data, 'code');
+        if (ex.data) db.exams = mergeCollections(db.exams, ex.data, 'id');
+        if (q.data) db.questions = mergeCollections(db.questions, q.data, 'id');
+
+        if (er.data && er.data.length > 0) {
+          const cloudEr = er.data.map((r: any) => ({
+            id: r.id,
+            student_id: r.student_id,
+            student_name: r.student_name || 'นักเรียน',
+            exam_id: r.exam_id,
+            score: Number(r.score ?? 0),
+            total_score: Number(r.total_score ?? r.max_score ?? 0),
+            max_score: Number(r.max_score ?? r.total_score ?? 0),
+            percentage: Number(r.percentage ?? 0),
+            start_time: r.start_time || r.submitted_at || new Date().toISOString(),
+            submit_time: r.submit_time || r.submitted_at || new Date().toISOString(),
+            submitted_at: r.submitted_at || r.submit_time || new Date().toISOString(),
+            answers: typeof r.answers === 'string' ? r.answers : JSON.stringify(r.answers || r.details || {}),
+            details: typeof r.details === 'string' ? r.details : JSON.stringify(r.details || r.answers || {}),
+            status: r.status || 'completed'
+          }));
+          db.exam_results = mergeCollections(db.exam_results, cloudEr, 'id');
+        }
+
+        if (cl.data) db.cheat_logs = mergeCollections(db.cheat_logs, cl.data, 'id');
+        if (ann.data) db.announcements = mergeCollections(db.announcements, ann.data, 'id');
+        if (disc.data) db.discussions = mergeCollections(db.discussions, disc.data, 'id');
+        if (pop.data) db.popup_messages = mergeCollections(db.popup_messages, pop.data, 'id');
+
+        writeOfflineDb(db);
+      } catch (mergeErr) {
+        console.error('Error merging back from Supabase in db-sync-to-cloud:', mergeErr);
       }
 
       res.json({
         success: true,
-        message: 'ซิงค์ข้อมูลทั้งหมดจาก Local ขึ้น Cloud Supabase สำเร็จเรียบร้อย!',
-        syncResults
+        syncResults,
+        errors: errors.length > 0 ? errors : undefined,
+        message: errors.length > 0
+          ? `ซิงค์ข้อมูลลง Cloud สำเร็จส่วนใหญ่ (แจ้งเตือน: ${errors.join('; ')})`
+          : 'ซิงค์และเชื่อมโยงฐานข้อมูลระหว่าง Local และ Cloud Supabase สำเร็จสมบูรณ์แล้ว!'
       });
     } catch (err: any) {
-      res.status(500).json({ error: 'เกิดข้อผิดพลาดในการซิงค์ขึ้น คลาวด์: ' + err.message });
+      res.status(500).json({ error: 'เกิดข้อผิดพลาดในการซิงค์ข้อมูล: ' + err.message });
     }
   });
 
