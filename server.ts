@@ -1303,12 +1303,80 @@ async function startServer() {
   // ==========================================
   // FEATURE 2: DATABASE BACKUP & RESTORE API
   // ==========================================
-  app.get('/api/backup/export', (req, res) => {
-    const db = readOfflineDb();
-    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Content-Disposition', `attachment; filename="exam_system_backup_${dateStr}.json"`);
-    res.send(JSON.stringify(db, null, 2));
+  app.get('/api/backup/export', async (req, res) => {
+    try {
+      const db = readOfflineDb();
+
+      // If Supabase is connected, fetch latest records from Cloud and merge into db
+      if (useSupabase && supabase) {
+        try {
+          const [t, s, sub, ex, q, er, cl, ann, disc, pop] = await Promise.all([
+            supabase.from('teachers').select('*'),
+            supabase.from('students').select('*'),
+            supabase.from('subjects').select('*'),
+            supabase.from('exams').select('*'),
+            supabase.from('questions').select('*'),
+            supabase.from('exam_results').select('*'),
+            supabase.from('cheat_logs').select('*'),
+            supabase.from('announcements').select('*'),
+            supabase.from('discussions').select('*'),
+            supabase.from('popup_messages').select('*')
+          ]);
+
+          if (t.data && t.data.length > 0) db.teachers = t.data;
+          if (s.data && s.data.length > 0) db.students = s.data;
+          if (sub.data && sub.data.length > 0) db.subjects = sub.data;
+          if (ex.data && ex.data.length > 0) db.exams = ex.data;
+          if (q.data && q.data.length > 0) db.questions = q.data;
+
+          if (er.data && er.data.length > 0) {
+            const cloudEr = er.data.map((r: any) => ({
+              id: r.id,
+              student_id: r.student_id,
+              student_name: r.student_name || 'นักเรียน',
+              exam_id: r.exam_id,
+              score: Number(r.score ?? 0),
+              total_score: Number(r.total_score ?? r.max_score ?? 0),
+              max_score: Number(r.max_score ?? r.total_score ?? 0),
+              percentage: Number(r.percentage ?? 0),
+              start_time: r.start_time || r.submitted_at || new Date().toISOString(),
+              submit_time: r.submit_time || r.submitted_at || new Date().toISOString(),
+              submitted_at: r.submitted_at || r.submit_time || new Date().toISOString(),
+              answers: typeof r.answers === 'string' ? r.answers : JSON.stringify(r.answers || r.details || {}),
+              details: typeof r.details === 'string' ? r.details : JSON.stringify(r.details || r.answers || {}),
+              status: r.status || 'completed'
+            }));
+            const erMap = new Map();
+            (db.exam_results || []).forEach((r: any) => erMap.set(r.id, r));
+            cloudEr.forEach((r: any) => erMap.set(r.id, r));
+            db.exam_results = Array.from(erMap.values());
+          }
+
+          if (cl.data && cl.data.length > 0) {
+            const clMap = new Map();
+            (db.cheat_logs || []).forEach((r: any) => clMap.set(r.id, r));
+            cl.data.forEach((r: any) => clMap.set(r.id, r));
+            db.cheat_logs = Array.from(clMap.values());
+          }
+
+          if (ann.data && ann.data.length > 0) db.announcements = ann.data;
+          if (disc.data && disc.data.length > 0) db.discussions = disc.data;
+          if (pop.data && pop.data.length > 0) db.popup_messages = pop.data;
+
+          // Update local offline cache with merged cloud data
+          writeOfflineDb(db);
+        } catch (fetchErr) {
+          console.error('Error merging Supabase data during export:', fetchErr);
+        }
+      }
+
+      const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Disposition', `attachment; filename="exam_system_backup_${dateStr}.json"`);
+      res.send(JSON.stringify(db, null, 2));
+    } catch (err: any) {
+      res.status(500).json({ error: 'เกิดข้อผิดพลาดในการส่งออกไฟล์สำรองข้อมูล: ' + err.message });
+    }
   });
 
   app.post('/api/backup/import', async (req, res) => {
@@ -1321,7 +1389,7 @@ async function startServer() {
       writeOfflineDb(backupData);
 
       // If Supabase is enabled, sync core tables
-      if (useSupabase) {
+      if (useSupabase && supabase) {
         try {
           if (Array.isArray(backupData.students) && backupData.students.length > 0) {
             await supabase.from('students').upsert(backupData.students);
@@ -1334,6 +1402,24 @@ async function startServer() {
           }
           if (Array.isArray(backupData.exams) && backupData.exams.length > 0) {
             await supabase.from('exams').upsert(backupData.exams);
+          }
+          if (Array.isArray(backupData.questions) && backupData.questions.length > 0) {
+            await supabase.from('questions').upsert(backupData.questions);
+          }
+          if (Array.isArray(backupData.exam_results) && backupData.exam_results.length > 0) {
+            await supabase.from('exam_results').upsert(backupData.exam_results);
+          }
+          if (Array.isArray(backupData.cheat_logs) && backupData.cheat_logs.length > 0) {
+            await supabase.from('cheat_logs').upsert(backupData.cheat_logs);
+          }
+          if (Array.isArray(backupData.announcements) && backupData.announcements.length > 0) {
+            await supabase.from('announcements').upsert(backupData.announcements);
+          }
+          if (Array.isArray(backupData.discussions) && backupData.discussions.length > 0) {
+            await supabase.from('discussions').upsert(backupData.discussions);
+          }
+          if (Array.isArray(backupData.popup_messages) && backupData.popup_messages.length > 0) {
+            await supabase.from('popup_messages').upsert(backupData.popup_messages);
           }
         } catch (spErr) {
           console.error('Supabase backup restore sync error:', spErr);
@@ -1409,6 +1495,24 @@ async function startServer() {
         const { error } = await supabase.from('cheat_logs').upsert(db.cheat_logs);
         if (error) errors.push(`Cheat Logs: ${error.message}`);
         else syncResults.cheat_logs = db.cheat_logs.length;
+      }
+
+      if (Array.isArray(db.announcements) && db.announcements.length > 0) {
+        const { error } = await supabase.from('announcements').upsert(db.announcements);
+        if (error) errors.push(`Announcements: ${error.message}`);
+        else syncResults.announcements = db.announcements.length;
+      }
+
+      if (Array.isArray(db.discussions) && db.discussions.length > 0) {
+        const { error } = await supabase.from('discussions').upsert(db.discussions);
+        if (error) errors.push(`Discussions: ${error.message}`);
+        else syncResults.discussions = db.discussions.length;
+      }
+
+      if (Array.isArray(db.popup_messages) && db.popup_messages.length > 0) {
+        const { error } = await supabase.from('popup_messages').upsert(db.popup_messages);
+        if (error) errors.push(`Popup Messages: ${error.message}`);
+        else syncResults.popup_messages = db.popup_messages.length;
       }
 
       if (errors.length > 0) {
