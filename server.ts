@@ -6,10 +6,23 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { createClient } from '@supabase/supabase-js';
 import { execSync } from 'child_process';
+import { GoogleGenAI, Type } from "@google/genai";
 
 dotenv.config();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Initialize Gemini Client server-side
+const ai = process.env.GEMINI_API_KEY
+  ? new GoogleGenAI({
+      apiKey: process.env.GEMINI_API_KEY,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
+      },
+    })
+  : null;
 
 // Helper function to dynamically initialize Supabase client
 function getSupabase() {
@@ -1103,6 +1116,293 @@ async function startServer() {
     }
 
     res.json(results);
+  });
+
+  // ==========================================
+  // ANSWER KEY TEMPLATES PER SUBJECT API
+  // ==========================================
+  app.get('/api/answer-keys', (req, res) => {
+    const db = readOfflineDb();
+    res.json(db.answer_keys || []);
+  });
+
+  app.post('/api/answer-keys', (req, res) => {
+    const { title, subject_code, num_questions, key_data } = req.body;
+    if (!title || !key_data) {
+      return res.status(400).json({ error: 'กรุณาระบุชื่อรายวิชาและข้อมูลเฉลย' });
+    }
+
+    const db = readOfflineDb();
+    if (!db.answer_keys) db.answer_keys = [];
+
+    // Check if updating existing template with same title or id
+    const existingIndex = db.answer_keys.findIndex((ak: any) => ak.title === title || (req.body.id && ak.id === req.body.id));
+    const templateObj = {
+      id: (req.body.id && req.body.id.startsWith('ak_')) ? req.body.id : 'ak_' + Date.now(),
+      title,
+      subject_code: subject_code || '',
+      num_questions: Number(num_questions || 30),
+      key_data,
+      updated_at: new Date().toISOString()
+    };
+
+    if (existingIndex !== -1) {
+      db.answer_keys[existingIndex] = templateObj;
+    } else {
+      db.answer_keys.push(templateObj);
+    }
+
+    writeOfflineDb(db);
+    res.json({ success: true, answerKeyTemplate: templateObj });
+  });
+
+  app.delete('/api/answer-keys/:id', (req, res) => {
+    const { id } = req.params;
+    const db = readOfflineDb();
+    if (db.answer_keys) {
+      db.answer_keys = db.answer_keys.filter((ak: any) => ak.id !== id);
+      writeOfflineDb(db);
+    }
+    res.json({ success: true });
+  });
+
+  // ==========================================
+  // OCR & OMR ANSWER SHEET AUTOMATIC GRADING API
+  // ==========================================
+  app.post('/api/ocr/grade-sheet', async (req, res) => {
+    try {
+      const { imageBase64, examId, questions, customAnswerKey, students, numQuestions = 30 } = req.body;
+
+      if (!imageBase64) {
+        return res.status(400).json({ error: 'กรุณาส่งรูปภาพกระดาษคำตอบสำหรับสแกน' });
+      }
+
+      const activeGenAi = ai || (process.env.GEMINI_API_KEY ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }) : null);
+
+      if (!activeGenAi) {
+        return res.status(500).json({ error: 'ไม่พบระบบประมวลผลบนเซิร์ฟเวอร์ กรุณาตรวจสอบ GEMINI_API_KEY' });
+      }
+
+      // Format image base64
+      let mimeType = 'image/jpeg';
+      let cleanBase64 = imageBase64;
+      if (imageBase64.includes(';base64,')) {
+        const parts = imageBase64.split(';base64,');
+        mimeType = parts[0].replace('data:', '') || 'image/jpeg';
+        cleanBase64 = parts[1];
+      }
+
+      // Fetch exam details or custom answer keys
+      const db = readOfflineDb();
+      let targetExam = null;
+      let targetQuestions = questions || [];
+      if (examId) {
+        targetExam = (db.exams || []).find((e: any) => e.id === examId);
+        if ((!targetQuestions || targetQuestions.length === 0) && db.questions) {
+          targetQuestions = db.questions.filter((q: any) => q.exam_id === examId);
+        }
+      }
+
+      // Custom answer key override
+      if (customAnswerKey && typeof customAnswerKey === 'object') {
+        const keyEntries = Array.isArray(customAnswerKey)
+          ? customAnswerKey
+          : Object.entries(customAnswerKey).map(([k, v]) => ({ questionNum: Number(k), correct_answer: String(v) }));
+        
+        targetQuestions = keyEntries.map((item: any, idx: number) => ({
+          id: `custom_${idx + 1}`,
+          question_text: `ข้อที่ ${item.questionNum || idx + 1}`,
+          correct_answer: item.correct_answer || item.answer || item.choice || ''
+        }));
+      }
+
+      const totalItems = targetQuestions.length > 0 ? targetQuestions.length : numQuestions;
+      const targetStudents = (students && students.length > 0) ? students : (db.students || []);
+
+      // Build key string for prompt if questions are available
+      let answerKeyPrompt = '';
+      if (targetQuestions && targetQuestions.length > 0) {
+        const keyList = targetQuestions.map((q: any, idx: number) => {
+          const num = idx + 1;
+          const ans = q.correct_answer || q.answer || '';
+          return `ข้อ ${num}: ${ans}`;
+        }).join(', ');
+        answerKeyPrompt = `\nเฉลยคำตอบมาตรฐานของชุดข้อสอบนี้คือ:\n${keyList}`;
+      }
+
+      const promptText = `คุณคือระบบตรวจกระดาษคำตอบ OMR / OCR ความแม่นยำสูงสำหรับสถาบันการศึกษา
+โปรดวิเคราะห์รูปภาพกระดาษคำตอบต่อไปนี้อย่างละเอียด:
+1. ตรวจหา "รหัสนักเรียน" (Student ID) จากตัวเลขที่เขียน หรือช่องตารางฝนรหัส 0-9
+2. ตรวจหา "ชื่อ-นามสกุล" ของนักเรียน (ถ้ามีระบุอยู่บนกระดาษ)
+3. ตรวจหา "ชื่อชุดข้อสอบ/รหัสวิชา" (ถ้ามีระบุหรือมี QR code)
+4. ตรวจสอบวงกลมตัวเลือก (A, B, C, D หรือ ก, ข, ค, ง / 1, 2, 3, 4) ตั้งแต่ข้อที่ 1 ถึงข้อที่ ${totalItems}:
+   - หาว่าในแต่ละข้อ นักเรียนฝน/ระบาย/กากบาท ตัวเลือกใด (ตอบเป็น "A", "B", "C", "D" หรือ "E")
+   - หากฝนหลายวงในข้อเดียวกัน ให้ตอบว่า "MULTIPLE"
+   - หากไม่ได้ฝน ให้ตอบว่า "" (เว้นว่าง)
+5. **ตรวจช่องครูตรวจให้คะแนน (Teacher Score Box / ตารางฝนคะแนนครูผู้ตรวจ OMR)**:
+   - สแกนดูในกรอบ "ช่องสำหรับครูผู้ตรวจฝน/กรอกคะแนนส่วนอัตนัย"
+   - หากครูผู้ตรวจใช้ **ตารางฝนคะแนน OMR** (ฝนวงกลมเลข 0-9 ในหลักร้อย, หลักสิบ, หลักหน่วย): ให้ถอดตัวเลขแต่ละหลักที่ครูฝนระบายไว้ แล้วรวมเป็นตัวเลขคะแนนที่ครูให้สำหรับส่วนอัตนัย/เขียนตอบ (teacherWrittenScore)
+   - หากครูเขียนคะแนนด้วยลายมือ ให้ถอดตัวเลขคะแนนนั้นระบุใน teacherWrittenScore
+   - หากพบตัวเลขคะแนนรวมสุทธิที่ครูสรุปไว้ ให้ระบุใน teacherTotalScore
+6. **ตรวจคำตอบแบบเขียนตอบ/เติมคำ (ถ้ามี)**:
+   - อ่านข้อความลายมือที่นักเรียนเขียนในช่องเติมคำตอบ หรือช่องเขียนตอบ
+${answerKeyPrompt}
+
+โปรดตอบกลับเป็น JSON Structure ตามสเปกต่อไปนี้เท่านั้น`;
+
+      const response = await activeGenAi.models.generateContent({
+        model: 'gemini-3.6-flash',
+        contents: [
+          {
+            inlineData: {
+              mimeType: mimeType,
+              data: cleanBase64,
+            },
+          },
+          {
+            text: promptText,
+          },
+        ],
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              detectedStudentId: { type: Type.STRING, description: 'ตัวเลขรหัสนักเรียนที่สแกนได้ เช่น 8002' },
+              detectedStudentName: { type: Type.STRING, description: 'ชื่อ-นามสกุลนักเรียนที่สแกนได้' },
+              detectedExamTitle: { type: Type.STRING, description: 'ชื่อชุดข้อสอบหรือรายวิชา' },
+              confidenceScore: { type: Type.NUMBER, description: 'คะแนนความเชื่อมั่นการอ่านภาพ 0-100' },
+              teacherWrittenScore: { type: Type.NUMBER, description: 'ตัวเลขคะแนนอัตนัย/คะแนนครูตรวจที่อ่านได้จากช่องครูตรวจ' },
+              teacherTotalScore: { type: Type.NUMBER, description: 'คะแนนรวมสุทธิที่ครูเขียนสรุปไว้ในกรอบ (ถ้ามี)' },
+              answers: {
+                type: Type.ARRAY,
+                description: 'รายการตัวเลือกที่ถูกฝนแยกตามข้อ 1 ถึง N',
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    questionNum: { type: Type.INTEGER, description: 'หมายเลขข้อ (เริ่มจาก 1)' },
+                    markedChoice: { type: Type.STRING, description: 'ตัวเลือกที่ระบาย: "A", "B", "C", "D", "E" หรือ "" หากว่าง หรือ "MULTIPLE" หากระบายซ้ำ' },
+                    confidence: { type: Type.NUMBER, description: 'ระดับความมั่นใจ 0-100' }
+                  },
+                  required: ['questionNum', 'markedChoice']
+                }
+              },
+              writtenAnswers: {
+                type: Type.ARRAY,
+                description: 'รายการข้อความเขียนตอบ/เติมคำ/จับคู่ที่สแกนได้จากกระดาษคำตอบ',
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    questionNum: { type: Type.INTEGER, description: 'หมายเลขข้อ' },
+                    textAnswer: { type: Type.STRING, description: 'ข้อความที่นักเรียนเขียนตอบ' },
+                    itemScore: { type: Type.NUMBER, description: 'คะแนนที่ครูตรวจให้รายข้อ (ถ้ามี)' }
+                  }
+                }
+              },
+              notes: { type: Type.STRING, description: 'หมายเหตุหรือข้อสังเกตเพิ่มเติมจากการสแกน' }
+            },
+            required: ['detectedStudentId', 'answers']
+          }
+        }
+      });
+
+      const parsed = JSON.parse(response.text || '{}');
+
+      // Match student from targetStudents roster
+      let matchedStudent = null;
+      const cleanedId = (parsed.detectedStudentId || '').replace(/\D/g, '');
+      if (cleanedId) {
+        matchedStudent = targetStudents.find((s: any) => String(s.student_id).trim() === cleanedId);
+      }
+      if (!matchedStudent && parsed.detectedStudentName) {
+        const namePart = parsed.detectedStudentName.trim();
+        matchedStudent = targetStudents.find((s: any) => s.name && s.name.includes(namePart));
+      }
+
+      // Choice normalization helper
+      const normalizeChoice = (val: string) => {
+        if (!val) return '';
+        const v = String(val).trim().toUpperCase();
+        if (v === 'A' || v === 'ก' || v === '1') return 'A';
+        if (v === 'B' || v === 'ข' || v === '2') return 'B';
+        if (v === 'C' || v === 'ค' || v === '3') return 'C';
+        if (v === 'D' || v === 'ง' || v === '4') return 'D';
+        if (v === 'E' || v === 'จ' || v === '5') return 'E';
+        if (v === 'MULTIPLE') return 'MULTIPLE';
+        return v;
+      };
+
+      const extractedAnswersMap = new Map();
+      (parsed.answers || []).forEach((item: any) => {
+        extractedAnswersMap.set(Number(item.questionNum), item.markedChoice);
+      });
+
+      let totalScore = 0;
+      const maxScore = targetQuestions.length > 0 ? targetQuestions.length : totalItems;
+      const itemAnalysis: any[] = [];
+
+      if (targetQuestions.length > 0) {
+        targetQuestions.forEach((q: any, idx: number) => {
+          const qNum = idx + 1;
+          const rawMarked = extractedAnswersMap.get(qNum) || '';
+          const marked = normalizeChoice(rawMarked);
+          const correctRaw = q.correct_answer || q.answer || '';
+          const correct = normalizeChoice(correctRaw);
+
+          const isCorrect = marked !== '' && marked !== 'MULTIPLE' && marked === correct;
+          if (isCorrect) totalScore += 1;
+
+          itemAnalysis.push({
+            questionNum: qNum,
+            questionId: q.id,
+            questionText: q.question_text || `ข้อที่ ${qNum}`,
+            markedChoiceRaw: rawMarked,
+            markedChoice: marked,
+            correctAnswerRaw: correctRaw,
+            correctAnswer: correct,
+            isCorrect,
+            explanation: q.explanation || ''
+          });
+        });
+      } else {
+        for (let i = 1; i <= totalItems; i++) {
+          const rawMarked = extractedAnswersMap.get(i) || '';
+          itemAnalysis.push({
+            questionNum: i,
+            markedChoiceRaw: rawMarked,
+            markedChoice: normalizeChoice(rawMarked),
+            correctAnswerRaw: '',
+            correctAnswer: '',
+            isCorrect: false
+          });
+        }
+      }
+
+      const percentage = maxScore > 0 ? Math.round((totalScore / maxScore) * 1000) / 10 : 0;
+
+      res.json({
+        success: true,
+        detectedStudentId: cleanedId || parsed.detectedStudentId || '',
+        detectedStudentName: parsed.detectedStudentName || (matchedStudent ? matchedStudent.name : ''),
+        matchedStudent: matchedStudent || null,
+        detectedExamTitle: parsed.detectedExamTitle || (targetExam ? targetExam.title : ''),
+        examId: targetExam ? targetExam.id : (examId || ''),
+        confidenceScore: parsed.confidenceScore || 90,
+        score: totalScore,
+        maxScore: maxScore,
+        percentage: percentage,
+        teacherWrittenScore: parsed.teacherWrittenScore || null,
+        teacherTotalScore: parsed.teacherTotalScore || null,
+        writtenAnswers: parsed.writtenAnswers || [],
+        itemAnalysis: itemAnalysis,
+        notes: parsed.notes || '',
+        rawExtracted: parsed
+      });
+
+    } catch (err: any) {
+      console.error('OCR Grade Sheet Error:', err);
+      res.status(500).json({ error: 'เกิดข้อผิดพลาดในการประมวลผล OCR สแกนกระดาษคำตอบ: ' + (err.message || String(err)) });
+    }
   });
 
   // SUBMIT CHEAT/FRAUD DETECTED EVENT

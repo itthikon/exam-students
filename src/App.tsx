@@ -6,10 +6,11 @@ import {
   Clock, Settings, Search, Filter, Users, Menu, Maximize, Minimize, CheckSquare,
   Brain, TrendingUp, Radio, Tv, Activity, Bell, Send, MessageSquare, Megaphone,
   MessageCircle, Download, UploadCloud, Globe, Heart, Pin, Volume2, ShieldAlert, Eye,
-  HelpCircle, MessageCircleQuestion, X, Info, Cloud
+  HelpCircle, MessageCircleQuestion, X, Info, Cloud, Scan
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
+import { AnswerSheetModule } from './components/AnswerSheetModule';
 
 const SUPABASE_SETUP_SQL = `-- 1. สร้างตารางทั้งหมดสำหรับระบบจัดสอบ
 CREATE TABLE IF NOT EXISTS public.teachers (
@@ -336,7 +337,7 @@ export default function App() {
   const [userRole, setUserRole] = useState<'guest' | 'student' | 'teacher' | 'admin'>('guest');
   const [browserInfo, setBrowserInfo] = useState(detectBrowser);
   const [currentUser, setCurrentUser] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<'students' | 'subjects' | 'exams' | 'stats' | 'analysis' | 'live_monitor' | 'popup_sender' | 'announcements' | 'backup'>('stats');
+  const [activeTab, setActiveTab] = useState<'students' | 'subjects' | 'exams' | 'stats' | 'analysis' | 'live_monitor' | 'popup_sender' | 'announcements' | 'backup' | 'omr_ocr'>('stats');
   const [dbStatus, setDbStatus] = useState({ useSupabase: false });
 
   // DB Data States
@@ -3072,6 +3073,14 @@ CREATE TABLE cheat_logs (
               </button>
 
               <button 
+                onClick={() => setActiveTab('omr_ocr')}
+                className={`w-full flex items-center gap-3 px-3 py-3 text-xs font-semibold rounded-xl transition-all cursor-pointer ${activeTab === 'omr_ocr' ? 'tab-3d-active text-white' : 'tab-3d-inactive text-slate-300 hover:bg-slate-800'}`}
+              >
+                <Scan className="w-4 h-4 text-emerald-400" />
+                <span>กระดาษคำตอบ & ตรวจ OCR</span>
+              </button>
+
+              <button 
                 onClick={() => setActiveTab('backup')}
                 className={`w-full flex items-center gap-3 px-3 py-3 text-xs font-semibold rounded-xl transition-all cursor-pointer ${activeTab === 'backup' ? 'tab-3d-active text-white' : 'tab-3d-inactive text-slate-300 hover:bg-slate-800'}`}
               >
@@ -5556,6 +5565,15 @@ CREATE TABLE cheat_logs (
                     );
                   })()}
                 </div>
+              )}
+
+              {/* === SUBPAGE: OMR & OCR ANSWER SHEET MODULE === */}
+              {activeTab === 'omr_ocr' && (
+                <AnswerSheetModule
+                  exams={exams}
+                  students={students}
+                  onResultSaved={() => fetchAllData()}
+                />
               )}
 
               {/* === SUBPAGE: STUDENTS ROSTER MANAGEMENT === */}

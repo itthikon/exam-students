@@ -1,6 +1,6 @@
 {
   "name": "Exam system",
   "description": "ระบบแบบทดสอบออนไลน์นิรภัย พร้อมระบบตรวจจับและป้องกันการทุจริตเรียลไทม์ นำเข้าข้อสอบและจัดการชุดข้อสอบ แดชบอร์ดสรุปสถิติอย่างละเอียดแยกตามรายบุคคลและวิชา",
-  "requestFramePermissions": [],
+  "requestFramePermissions": ["camera"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
