@@ -1591,7 +1591,7 @@ export const AnswerSheetScanner: React.FC<AnswerSheetScannerProps> = ({ exams, s
                   <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 max-h-44 overflow-y-auto grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-1.5 text-xs">
                     {Object.entries(parsedPreviewMap).map(([qNumStr, ans]) => {
                       const qNum = Number(qNumStr);
-                      const displayChoice = getChoiceDisplay(ans, pastedChoiceFormat);
+                      const displayChoice = getChoiceDisplay(String(ans), pastedChoiceFormat);
                       return (
                         <div key={qNum} className="bg-slate-900 border border-slate-800 rounded-lg p-1.5 text-center font-mono">
                           <span className="text-[10px] text-slate-400 block">ข้อ {qNum}</span>

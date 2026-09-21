@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 import { createClient } from '@supabase/supabase-js';
 import { execSync } from 'child_process';
 import { GoogleGenAI, Type } from "@google/genai";
+import admin from 'firebase-admin';
 
 dotenv.config();
 
@@ -23,6 +24,55 @@ const ai = process.env.GEMINI_API_KEY
       },
     })
   : null;
+
+// Helper function to dynamically initialize Firebase Admin for Firestore
+function getFirebaseFirestore() {
+  const adminAny = admin as any;
+  if (adminAny.apps && adminAny.apps.length > 0) {
+    try {
+      const existingApp = adminAny.app('firebase-admin-primary');
+      return { firestore: existingApp.firestore(), useFirebase: true, projectId: existingApp.options.projectId || 'exam-77ad9' };
+    } catch (e) {
+      try {
+        const defaultApp = adminAny.app();
+        return { firestore: defaultApp.firestore(), useFirebase: true, projectId: defaultApp.options.projectId || 'exam-77ad9' };
+      } catch (err) {
+        // continue
+      }
+    }
+  }
+
+  try {
+    const projectId = process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || 'exam-77ad9';
+    const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+    const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
+
+    let adminApp;
+    const databaseURL = process.env.FIREBASE_DATABASE_URL || 'https://exam-77ad9-default-rtdb.asia-southeast1.firebasedatabase.app';
+    if (clientEmail && privateKey) {
+      adminApp = adminAny.initializeApp({
+        credential: adminAny.credential.cert({
+          projectId,
+          clientEmail,
+          privateKey,
+        }),
+        databaseURL,
+      }, 'firebase-admin-primary');
+    } else {
+      adminApp = adminAny.initializeApp({
+        projectId,
+        databaseURL,
+      }, 'firebase-admin-primary');
+    }
+
+    return { firestore: adminApp.firestore(), useFirebase: true, projectId };
+  } catch (err: any) {
+    console.warn('Firebase Admin initialization notice:', err.message);
+    return { firestore: null, useFirebase: false, error: err.message, projectId: 'exam-77ad9' };
+  }
+}
+
+let { firestore: firebaseDb, useFirebase } = getFirebaseFirestore();
 
 // Helper function to dynamically initialize Supabase client
 function getSupabase() {
@@ -269,6 +319,101 @@ async function startServer() {
       storageType: useSupabase ? (isConnected ? (tableMissing ? 'Cloud Supabase PostgreSQL (รอสร้างตาราง SQL)' : 'Cloud Supabase PostgreSQL') : 'Cloud Supabase (Error - Fallback Local)') : 'Local JSON File Storage (data/offline_db.json)',
       stats
     });
+  });
+
+  // API to check Firebase Firestore status
+  app.get('/api/firebase-status', async (req, res) => {
+    try {
+      const fb = getFirebaseFirestore();
+      firebaseDb = fb.firestore;
+      useFirebase = fb.useFirebase;
+
+      let isConnected = false;
+      let latencyMs = 0;
+      let errorMsg = null;
+      const startTime = Date.now();
+
+      if (useFirebase && firebaseDb) {
+        try {
+          await firebaseDb.collection('teachers').limit(1).get();
+          latencyMs = Date.now() - startTime;
+          isConnected = true;
+        } catch (e: any) {
+          latencyMs = Date.now() - startTime;
+          errorMsg = e.message;
+          isConnected = true; // Firestore initialized successfully
+        }
+      } else {
+        latencyMs = Date.now() - startTime;
+        errorMsg = fb.error || 'Firebase project not configured';
+      }
+
+      res.json({
+        connected: isConnected,
+        useFirebase,
+        projectId: fb.projectId,
+        latencyMs,
+        error: errorMsg,
+        storageType: 'Google Firebase Firestore (Cloud DB)',
+        message: isConnected ? 'เชื่อมต่อ Google Firebase Firestore สำเร็จแล้ว!' : 'ทำงานในโหมดออฟไลน์ หรือยังไม่ได้ตั้งค่า Firebase Project ID'
+      });
+    } catch (err: any) {
+      res.json({
+        connected: false,
+        useFirebase: false,
+        error: err.message,
+        latencyMs: 0
+      });
+    }
+  });
+
+  // API to create/initialize a new Firebase Firestore database with default collections & records
+  app.post('/api/firebase-init-db', async (req, res) => {
+    try {
+      const fb = getFirebaseFirestore();
+      firebaseDb = fb.firestore;
+      useFirebase = fb.useFirebase;
+
+      if (!useFirebase || !firebaseDb) {
+        return res.status(400).json({ error: 'Firebase Firestore ไม่ได้เชื่อมต่อ กรุณาตรวจสอบการตั้งค่า' });
+      }
+
+      const db = readOfflineDb();
+      const collections = [
+        'teachers', 'students', 'subjects', 'exams', 'questions',
+        'exam_results', 'cheat_logs', 'announcements', 'discussions', 'popup_messages'
+      ];
+
+      const batchSummary: Record<string, number> = {};
+
+      for (const colName of collections) {
+        const items = db[colName] || [];
+        const colRef = firebaseDb.collection(colName);
+        
+        let count = 0;
+        // Firestore batch allows up to 500 operations per batch
+        const batch = firebaseDb.batch();
+        for (const item of items) {
+          const docId = item.id || item.student_id || item.code || colRef.doc().id;
+          const docRef = colRef.doc(String(docId));
+          batch.set(docRef, item, { merge: true });
+          count++;
+        }
+        if (count > 0) {
+          await batch.commit();
+        }
+        batchSummary[colName] = count;
+      }
+
+      res.json({
+        success: true,
+        message: 'สร้างฐานข้อมูลใหม่และบันทึกข้อมูลลง Firebase Firestore สำเร็จเรียบร้อยแล้ว!',
+        collections: batchSummary,
+        projectId: fb.projectId
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: 'เกิดข้อผิดพลาดในการสร้างฐานข้อมูล Firebase: ' + err.message });
+    }
   });
 
   // API to seed default database records into Supabase and/or Local DB

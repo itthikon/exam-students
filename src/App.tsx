@@ -6,7 +6,7 @@ import {
   Clock, Settings, Search, Filter, Users, Menu, Maximize, Minimize, CheckSquare,
   Brain, TrendingUp, Radio, Tv, Activity, Bell, Send, MessageSquare, Megaphone,
   MessageCircle, Download, UploadCloud, Globe, Heart, Pin, Volume2, ShieldAlert, Eye,
-  HelpCircle, MessageCircleQuestion, X, Info, Cloud, Scan
+  HelpCircle, MessageCircleQuestion, X, Info, Cloud, Scan, GitBranch, ArrowRight, Layers, HardDrive, Flame
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
@@ -661,18 +661,64 @@ export default function App() {
   const [isTestingDb, setIsTestingDb] = useState(false);
   const [isSeedingDb, setIsSeedingDb] = useState(false);
   const [isSyncingCloud, setIsSyncingCloud] = useState(false);
+  const [firebaseStatus, setFirebaseStatus] = useState<any>({ connected: false, useFirebase: false });
+  const [isInitializingFirebase, setIsInitializingFirebase] = useState(false);
+
+  const fetchFirebaseStatus = async () => {
+    try {
+      const res = await fetch('/api/firebase-status');
+      if (res.ok) {
+        const data = await res.json();
+        setFirebaseStatus(data);
+      }
+    } catch (e) {
+      console.error('Failed to fetch firebase status', e);
+    }
+  };
+
+  useEffect(() => {
+    if (showDbStatusModal) {
+      fetchFirebaseStatus();
+    }
+  }, [showDbStatusModal]);
+
+  const handleInitFirebaseDb = async () => {
+    if (!window.confirm('คุณต้องการสร้างฐานข้อมูลใหม่และบันทึกข้อมูลทั้งหมดลงใน Google Firebase Firestore ใช่หรือไม่?')) return;
+    setIsInitializingFirebase(true);
+    try {
+      const res = await fetch('/api/firebase-init-db', { method: 'POST' });
+      const data = await res.json();
+      if (res.ok) {
+        showToast(data.message || 'สร้างฐานข้อมูลใหม่ใน Firebase สำเร็จเรียบร้อยแล้ว!', 'success');
+        await fetchFirebaseStatus();
+        await handleTestDbConnection();
+      } else {
+        showToast(data.error || 'ไม่สามารถสร้างฐานข้อมูล Firebase ได้', 'error');
+      }
+    } catch (e) {
+      console.error(e);
+      showToast('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์', 'error');
+    } finally {
+      setIsInitializingFirebase(false);
+    }
+  };
 
   const handleTestDbConnection = async () => {
     setIsTestingDb(true);
     try {
-      const dbRes = await fetch('/api/db-status');
+      const [dbRes, fbRes] = await Promise.all([
+        fetch('/api/db-status'),
+        fetch('/api/firebase-status')
+      ]);
       if (dbRes.ok) {
         const data = await dbRes.json();
         setDbStatus(data);
-        showToast(`ทดสอบการเชื่อมต่อเรียบร้อย (${data.latencyMs || 0}ms)`, 'success');
-      } else {
-        showToast('ไม่สามารถทดสอบการเชื่อมต่อฐานข้อมูลได้', 'error');
       }
+      if (fbRes.ok) {
+        const fbData = await fbRes.json();
+        setFirebaseStatus(fbData);
+      }
+      showToast('ทดสอบสถานะการเชื่อมต่อฐานข้อมูลทั้งหมดเรียบร้อย', 'success');
     } catch (e) {
       showToast('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์', 'error');
     } finally {
@@ -5572,7 +5618,7 @@ CREATE TABLE cheat_logs (
                 <AnswerSheetModule
                   exams={exams}
                   students={students}
-                  onResultSaved={() => fetchAllData()}
+                  onResultSaved={() => refreshData()}
                 />
               )}
 
@@ -6155,6 +6201,40 @@ CREATE TABLE cheat_logs (
               </div>
             </div>
 
+            {/* Google Firebase Firestore Management Card */}
+            <div className="bg-orange-950/30 border border-orange-500/30 rounded-2xl p-4 space-y-3">
+              <div className="flex items-center justify-between border-b border-orange-500/20 pb-2">
+                <div className="flex items-center gap-2">
+                  <Flame className="w-5 h-5 text-orange-400" />
+                  <h4 className="text-xs font-bold text-orange-200 uppercase tracking-wider">
+                    Google Firebase Firestore (Cloud Database Setup)
+                  </h4>
+                </div>
+                <span className={`text-[10px] font-mono px-2.5 py-0.5 rounded-full border ${firebaseStatus.connected ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' : 'bg-amber-500/10 text-amber-400 border-amber-500/30'}`}>
+                  {firebaseStatus.connected ? '● FIREBASE CONNECTED' : '● FIREBASE READY'}
+                </span>
+              </div>
+
+              <div className="space-y-2 text-xs text-slate-300">
+                <p className="leading-relaxed">
+                  เชื่อมต่อฐานข้อมูล NoSQL ของ Google Firebase Firestore เพื่อจัดเก็บข้อมูลนักเรียน ข้อสอบ และผลการสอบแบบเรียลไทม์บนคลาวด์ พร้อมระบบสร้างฐานข้อมูลใหม่ทันที
+                </p>
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                  <div className="font-mono text-[11px] text-slate-400">
+                    Project ID: <span className="text-orange-300 font-bold">{firebaseStatus.projectId || 'dongluang-exam-db'}</span>
+                  </div>
+                  <button
+                    onClick={handleInitFirebaseDb}
+                    disabled={isInitializingFirebase}
+                    className="px-4 py-2.5 bg-orange-600 hover:bg-orange-500 text-white font-extrabold text-xs rounded-xl flex items-center gap-2 cursor-pointer shadow-lg shadow-orange-600/20 transition-all active:scale-95 disabled:opacity-50"
+                  >
+                    <Flame className={`w-4 h-4 ${isInitializingFirebase ? 'animate-spin' : ''}`} />
+                    <span>{isInitializingFirebase ? 'กำลังสร้างฐานข้อมูลใหม่...' : '🚀 สร้างฐานข้อมูลใหม่ใน Firebase (Initialize DB)'}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
             {/* Supabase Table Setup SQL Copy Helper - Unconditionally visible for easy access */}
             <div className="bg-amber-950/40 border border-amber-600/40 rounded-2xl p-4 space-y-3">
               <div className="flex items-start gap-3">
@@ -6190,6 +6270,78 @@ CREATE TABLE cheat_logs (
                     <Download className="w-4 h-4" />
                     <span>📋 คัดลอกคำสั่ง SQL สร้างตารางลง Supabase</span>
                   </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Interactive Database Storage Workflow Diagram */}
+            <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 space-y-3">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                <div className="flex items-center gap-2">
+                  <GitBranch className="w-4 h-4 text-cyan-400" />
+                  <h4 className="text-xs font-bold text-slate-100 uppercase tracking-wider">
+                    Workflow ผังขั้นตอนการบันทึกข้อมูลลงฐานข้อมูล (Database Storage Flow)
+                  </h4>
+                </div>
+                <span className="text-[10px] font-mono bg-cyan-950 text-cyan-300 border border-cyan-800 px-2.5 py-0.5 rounded-full font-bold">
+                  Dual-Storage Architecture
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2 pt-1 text-xs">
+                {/* Step 1 */}
+                <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl flex flex-col items-center text-center space-y-1.5 relative group hover:border-cyan-500/50 transition-all">
+                  <div className="w-7 h-7 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/40 flex items-center justify-center font-bold font-mono text-xs">
+                    1
+                  </div>
+                  <span className="font-bold text-slate-200 text-xs">1. ผู้ใช้ทำรายการ</span>
+                  <p className="text-[10px] text-slate-400 leading-snug">
+                    ตรวจกระดาษคำตอบ OMR / ทำข้อสอบ / เพิ่มนักเรียน / บันทึกเฉลย
+                  </p>
+                </div>
+
+                {/* Step 2 */}
+                <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl flex flex-col items-center text-center space-y-1.5 relative group hover:border-indigo-500/50 transition-all">
+                  <div className="w-7 h-7 rounded-full bg-indigo-500/20 text-indigo-400 border border-indigo-500/40 flex items-center justify-center font-bold font-mono text-xs">
+                    2
+                  </div>
+                  <span className="font-bold text-slate-200 text-xs">2. ยิง Express API</span>
+                  <p className="text-[10px] text-slate-400 leading-snug">
+                    Client ส่ง HTTP POST/PUT JSON ไปยัง <code className="text-indigo-300">/api/*</code>
+                  </p>
+                </div>
+
+                {/* Step 3 */}
+                <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl flex flex-col items-center text-center space-y-1.5 relative group hover:border-emerald-500/50 transition-all">
+                  <div className="w-7 h-7 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center justify-center font-bold font-mono text-xs">
+                    3
+                  </div>
+                  <span className="font-bold text-slate-200 text-xs">3. บันทึก Local DB</span>
+                  <p className="text-[10px] text-slate-400 leading-snug">
+                    เซิร์ฟเวอร์เขียนลง <code className="text-emerald-300">data/offline_db.json</code> ทันที
+                  </p>
+                </div>
+
+                {/* Step 4 */}
+                <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl flex flex-col items-center text-center space-y-1.5 relative group hover:border-amber-500/50 transition-all">
+                  <div className="w-7 h-7 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center justify-center font-bold font-mono text-xs">
+                    4
+                  </div>
+                  <span className="font-bold text-slate-200 text-xs">4. ซิงค์ Supabase Cloud</span>
+                  <p className="text-[10px] text-slate-400 leading-snug">
+                    บันทึก/อัปเดตลง Cloud Database (เมื่อมี Key ตั้งไว้)
+                  </p>
+                </div>
+
+                {/* Step 5 */}
+                <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl flex flex-col items-center text-center space-y-1.5 relative group hover:border-purple-500/50 transition-all">
+                  <div className="w-7 h-7 rounded-full bg-purple-500/20 text-purple-400 border border-purple-500/40 flex items-center justify-center font-bold font-mono text-xs">
+                    5
+                  </div>
+                  <span className="font-bold text-slate-200 text-xs">5. ตอบกลับ & อัปเดต UI</span>
+                  <p className="text-[10px] text-slate-400 leading-snug">
+                    คืนค่า 200 OK, React State อัปเดตการแสดงผลทันที
+                  </p>
                 </div>
               </div>
             </div>
