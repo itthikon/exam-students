@@ -73,49 +73,10 @@ function getFirebaseFirestore() {
 }
 
 let { firestore: firebaseDb, useFirebase } = getFirebaseFirestore();
+const useSupabase = false;
+const supabase: any = null;
 
-// Helper function to dynamically initialize Supabase client
-function getSupabase() {
-  let url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://ydcqldedlcttxycjxcll.supabase.co';
-  // Override old database URL if environment retains old project URL
-  if (url.includes('lzzpebrahqwcberfqwfk')) {
-    url = 'https://ydcqldedlcttxycjxcll.supabase.co';
-  }
-
-  // Prioritize SUPABASE_ANON_KEY and filter out stale key signatures from previous project
-  const validKeys = [
-    process.env.SUPABASE_ANON_KEY,
-    process.env.SUPABASE_PUBLISHABLE_KEY,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
-    process.env.SUPABASE_SECRET_KEY,
-    process.env.SUPABASE_KEY
-  ].filter((k): k is string => !!k && !k.includes('5wZcB') && !k.includes('cv-eJsXw7dsobPsicRR5ZQ'));
-
-  const key = validKeys[0] || process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || '';
-
-  if (!url || !key) {
-    return { client: null, useSupabase: false, url, keyPresent: false };
-  }
-
-  try {
-    const client = createClient(url, key);
-    return { client, useSupabase: true, url, keyPresent: true };
-  } catch (err: any) {
-    return { client: null, useSupabase: false, url, keyPresent: true, error: err.message };
-  }
-}
-
-// Initial client reference
-let { client: supabase, useSupabase } = getSupabase();
-
-// Offline fallback Database Path
-const dbDir = path.join(__dirname, 'data');
-const dbPath = path.join(dbDir, 'offline_db.json');
-
-if (!fs.existsSync(dbDir)) {
-  fs.mkdirSync(dbDir, { recursive: true });
-}
-
+// Cloud Database Memory Cache (Firebase Firestore powered - Exclusive Cloud DB)
 const defaultDbData = {
   teachers: [
     { id: 't1', email: 'itthikon.w@dongluangwittaya.ac.th', name: 'ครูอิทธิกร (Admin)', role: 'admin', password: 'password123' },
@@ -134,45 +95,56 @@ const defaultDbData = {
   live_sessions: []
 };
 
-// Only initialize offline_db.json if it doesn't exist yet to avoid wiping user data
-if (!fs.existsSync(dbPath)) {
-  try {
-    fs.writeFileSync(dbPath, JSON.stringify(defaultDbData, null, 2), 'utf-8');
-  } catch (e) {
-    console.error('Error initializing offline db:', e);
+let cloudMemoryDb: any = { ...defaultDbData };
+
+// Initialize cloud memory DB from Firebase Firestore at startup
+async function loadCloudDbIntoMemory() {
+  if (useFirebase && firebaseDb) {
+    try {
+      const collections = Object.keys(defaultDbData);
+      for (const col of collections) {
+        const snapshot = await firebaseDb.collection(col).get();
+        if (!snapshot.empty) {
+          cloudMemoryDb[col] = snapshot.docs.map((doc: any) => doc.data());
+        } else if ((defaultDbData as any)[col].length > 0) {
+          for (const item of (defaultDbData as any)[col]) {
+            const docId = item.id || item.student_id || item.code || firebaseDb.collection(col).doc().id;
+            await firebaseDb.collection(col).doc(String(docId)).set(item, { merge: true });
+          }
+        }
+      }
+      console.log('Successfully loaded and synchronized database from Firebase Firestore cloud storage.');
+    } catch (e: any) {
+      console.warn('Could not load from Firebase Firestore on startup, using default memory state:', e.message);
+    }
   }
 }
 
-// Helpers for reading/writing offline DB
+// Helpers for reading/writing cloud DB (sync interface backing memory + async cloud persistence)
 function readOfflineDb() {
-  try {
-    const raw = fs.readFileSync(dbPath, 'utf-8');
-    const db = JSON.parse(raw);
-    if (!db.teachers) db.teachers = defaultDbData.teachers;
-    if (!db.students) db.students = [];
-    if (!db.subjects) db.subjects = [];
-    if (!db.exams) db.exams = [];
-    if (!db.questions) db.questions = [];
-    if (!db.exam_results) db.exam_results = [];
-    if (!db.cheat_logs) db.cheat_logs = [];
-    if (!db.locked_students) db.locked_students = [];
-    if (!db.live_sessions) db.live_sessions = [];
-    if (!db.popup_messages) db.popup_messages = [];
-    if (!db.announcements) db.announcements = [];
-    if (!db.discussions) db.discussions = [];
-    return db;
-  } catch (err) {
-    console.error('Error reading offline database file:', err);
-    return { ...defaultDbData };
-  }
+  return cloudMemoryDb;
 }
 
 function writeOfflineDb(data: any) {
   try {
-    fs.writeFileSync(dbPath, JSON.stringify(data, null, 2), 'utf-8');
+    cloudMemoryDb = { ...data };
+    // Asynchronously persist to Firebase Firestore cloud database
+    if (useFirebase && firebaseDb) {
+      const collections = Object.keys(data);
+      (async () => {
+        for (const col of collections) {
+          const items = data[col] || [];
+          const colRef = firebaseDb.collection(col);
+          for (const item of items) {
+            const docId = item.id || item.student_id || item.code || colRef.doc().id;
+            await colRef.doc(String(docId)).set(item, { merge: true });
+          }
+        }
+      })().catch(err => console.error('Error background-syncing to Firebase Firestore:', err));
+    }
     return true;
   } catch (err) {
-    console.error('Error writing offline database file:', err);
+    console.error('Error writing cloud memory database:', err);
     return false;
   }
 }
@@ -197,6 +169,9 @@ function mergeCollections<T>(localList: T[] = [], cloudList: T[] = [], primaryKe
 }
 
 async function startServer() {
+  // Load database state from Firebase Firestore Cloud DB
+  await loadCloudDbIntoMemory();
+
   // Check if we are running in production and the frontend dist is not built
   if (process.env.NODE_ENV === 'production') {
     const distHtmlPath = path.join(__dirname, 'dist/index.html');
@@ -215,65 +190,35 @@ async function startServer() {
   app.use(express.json({ limit: '100mb' }));
   app.use(express.urlencoded({ limit: '100mb', extended: true }));
 
-  // API to verify if database is active (online vs offline mode) with health & latency stats
+  // API to verify if database is active (Cloud Firebase Firestore) with health & latency stats
   app.get('/api/db-status', async (req, res) => {
     const startTime = Date.now();
-    const sup = getSupabase();
-    supabase = sup.client;
-    useSupabase = sup.useSupabase;
-
     let isConnected = false;
     let latencyMs = 0;
-    let supabaseError: string | null = null;
-    let tableMissing = false;
+    let errorMsg = null;
 
-    if (useSupabase && supabase) {
-      try {
-        const { data, error } = await supabase.from('students').select('student_id', { count: 'exact', head: true });
+    try {
+      const fb = getFirebaseFirestore();
+      firebaseDb = fb.firestore;
+      useFirebase = fb.useFirebase;
+
+      if (useFirebase && firebaseDb) {
+        await firebaseDb.collection('teachers').limit(1).get();
         latencyMs = Date.now() - startTime;
-        if (error) {
-          supabaseError = error.message || 'Unauthorized / Invalid Key';
-          const isTableErr = error.code === 'PGRST205' || error.code === '42P01' || error.message?.includes('schema cache') || error.message?.includes('does not exist');
-          if (isTableErr) {
-            tableMissing = true;
-            isConnected = true; // Supabase Cloud is reached and connected! Only SQL tables need creation.
-          } else {
-            // Test if teachers table or basic ping works
-            const tRes = await supabase.from('teachers').select('id', { count: 'exact', head: true });
-            if (!tRes.error) {
-              isConnected = true;
-              tableMissing = false;
-            } else if (tRes.error.code === 'PGRST205' || tRes.error.code === '42P01' || tRes.error.message?.includes('does not exist')) {
-              isConnected = true;
-              tableMissing = true;
-            } else {
-              isConnected = false;
-              if (!tRes.error.message || tRes.error.message.length === 0) {
-                supabaseError = 'API Key ไม่ถูกต้องสำหรับโปรเจกต์ใหม่ (https://ydcqldedlcttxycjxcll.supabase.co) - กรุณาระบุ SUPABASE_SECRET_KEY หรือ SUPABASE_PUBLISHABLE_KEY ใน Secrets';
-              } else {
-                supabaseError = tRes.error.message;
-              }
-            }
-          }
-        } else {
-          isConnected = true;
-          tableMissing = false;
-        }
-      } catch (e: any) {
+        isConnected = true;
+      } else {
+        latencyMs = Date.now() - startTime;
         isConnected = false;
-        latencyMs = Date.now() - startTime;
-        supabaseError = e.message || 'Supabase connection failed';
+        errorMsg = 'Firebase Firestore not configured';
       }
-    } else {
+    } catch (e: any) {
       latencyMs = Date.now() - startTime;
       isConnected = false;
-      if (!sup.keyPresent) {
-        supabaseError = 'ยังไม่ได้ตั้งค่าคีย์ SUPABASE_SECRET_KEY หรือ SUPABASE_PUBLISHABLE_KEY ในไฟล์ .env / Secrets';
-      }
+      errorMsg = e.message;
     }
 
     const db = readOfflineDb();
-    let stats = {
+    const stats = {
       teachers: db.teachers?.length || 0,
       students: db.students?.length || 0,
       subjects: db.subjects?.length || 0,
@@ -283,40 +228,12 @@ async function startServer() {
       cheat_logs: db.cheat_logs?.length || 0,
     };
 
-    if (useSupabase && isConnected && supabase && !tableMissing) {
-      try {
-        const [t, s, sub, ex, q, er, cl] = await Promise.all([
-          supabase.from('teachers').select('id', { count: 'exact', head: true }),
-          supabase.from('students').select('student_id', { count: 'exact', head: true }),
-          supabase.from('subjects').select('id', { count: 'exact', head: true }),
-          supabase.from('exams').select('id', { count: 'exact', head: true }),
-          supabase.from('questions').select('id', { count: 'exact', head: true }),
-          supabase.from('exam_results').select('id', { count: 'exact', head: true }),
-          supabase.from('cheat_logs').select('id', { count: 'exact', head: true })
-        ]);
-        stats = {
-          teachers: t.count ?? stats.teachers,
-          students: s.count ?? stats.students,
-          subjects: sub.count ?? stats.subjects,
-          exams: ex.count ?? stats.exams,
-          questions: q.count ?? stats.questions,
-          exam_results: er.count ?? stats.exam_results,
-          cheat_logs: cl.count ?? stats.cheat_logs,
-        };
-      } catch (e) {
-        // Fallback to local stats
-      }
-    }
-
     res.json({
-      useSupabase,
-      keyPresent: sup.keyPresent,
+      useFirebase,
       isConnected,
       latencyMs,
-      supabaseUrl: sup.url || null,
-      supabaseError,
-      tableMissing,
-      storageType: useSupabase ? (isConnected ? (tableMissing ? 'Cloud Supabase PostgreSQL (รอสร้างตาราง SQL)' : 'Cloud Supabase PostgreSQL') : 'Cloud Supabase (Error - Fallback Local)') : 'Local JSON File Storage (data/offline_db.json)',
+      error: errorMsg,
+      storageType: isConnected ? 'Google Firebase Firestore (Cloud DB)' : 'Cloud Memory Database (Offline Fallback)',
       stats
     });
   });
